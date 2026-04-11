@@ -1,0 +1,26 @@
+# ===========================================================================
+# requirements.txt — Acoustic Anomaly Detection Pipeline
+# ===========================================================================
+# Install with:  pip install -r requirements.txt
+# ===========================================================================
+
+# --- Core Scientific Computing ---
+numpy
+
+# --- Audio Processing ---
+librosa
+
+# --- Machine Learning Utilities ---
+scikit-learn
+joblib
+
+# --- Deep Learning Framework (PyTorch) ---
+torch
+
+# --- API Deployment ---
+fastapi
+uvicorn
+python-multipart
+
+# --- Notebook Environment ---
+notebook
