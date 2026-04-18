@@ -11,7 +11,7 @@ This project implements an **Unsupervised Autoencoder** for detecting anomalies 
 ### How It Works
 
 1. **Audio → Image**: Raw `.wav` waveforms are converted into 2D **Log-Mel Spectrograms** — a visual "heat-map" of sound that captures frequency, time, and intensity.
-2. **Learn Normal**: A Convolutional Autoencoder is trained *only* on normal machine sounds. It learns to compress and reconstruct what "healthy" sounds look like.
+2. **Learn Normal**: A Dense Autoencoder (fully-connected `nn.Linear` layers) is trained *only* on normal machine sounds. It learns to compress and reconstruct what "healthy" sounds look like.
 3. **Detect Anomalies**: When an abnormal sound is fed in, the Autoencoder fails to reconstruct it accurately. The **Reconstruction Error (MSE)** spikes — this spike *is* the anomaly signal.
 4. **Deploy**: A FastAPI server exposes the trained model as a REST API endpoint for real-time inference.
 
@@ -139,14 +139,17 @@ This notebook will:
 ### Step 3: Train the Autoencoder
 
 ```bash
-jupyter notebook notebooks/02_model_training.ipynb
+jupyter notebook notebooks/02_autoencoder_training.ipynb
 ```
 
 This notebook will:
-- Load the preprocessed `.npy` files
-- Build and train a Convolutional Autoencoder in PyTorch
-- Use Early Stopping with the validation set to prevent overfitting
-- Save the trained model weights as `.pth` files
+- Define a Dense Autoencoder (`nn.Linear` layers: 40064 → 1024 → 256 → **64** → 256 → 1024 → 40064)
+- Flatten `(128, 313)` spectrograms into 40,064-feature vectors
+- Use `nn.Dropout(0.2)` to combat Domain Shift memorization
+- Use `Sigmoid` output layer to match the `[0, 1]` scaled input range
+- Train with `MSELoss` and `Adam` optimizer with `weight_decay` (L2 regularization)
+- Apply Early Stopping on validation loss to prevent overfitting
+- Save the best model weights as `.pth` checkpoints
 
 ### Step 4: Launch the FastAPI Inference Server
 
@@ -159,13 +162,24 @@ The server exposes API endpoints for real-time anomaly detection. Upload a `.wav
 
 ---
 
+## Current Project Architecture
+
+| Phase | Notebook | Status | Key Technical Details |
+|-------|----------|--------|----------------------|
+| **Phase 1** — Data Preprocessing | `01_data_prep.ipynb` | ✅ Complete | Dynamic machine scanning, 128-band Log-Mel Spectrograms, 85/15 split, `MinMaxScaler(0,1)` with leakage prevention |
+| **Phase 2** — Autoencoder Architecture | `02_autoencoder_training.ipynb` | ✅ Complete | Unsupervised PyTorch `nn.Linear` Autoencoder, **64-dim bottleneck** (626× compression), `nn.Dropout(0.2)` for Domain Shift regularization, `nn.Sigmoid` output layer, L2 regularization via `weight_decay` |
+| **Phase 3** — Evaluation & Scoring | `03_evaluation.ipynb` | 🔲 Upcoming | Reconstruction Error (MSE) anomaly scoring, per-machine threshold tuning |
+| **Phase 4** — API Deployment | `src/app.py` | 🔲 Upcoming | FastAPI REST endpoint for real-time `.wav` inference |
+
+---
+
 ## Tech Stack
 
 | Component | Technology | Role |
 |-----------|-----------|------|
 | Audio Processing | `librosa` | Load `.wav` files, compute Mel spectrograms |
 | Data Science | `numpy`, `scikit-learn` | Array operations, train/val split, scaling |
-| Deep Learning | `PyTorch` | Convolutional Autoencoder architecture |
+| Deep Learning | `PyTorch` | Dense Autoencoder (fully-connected `nn.Linear` layers) |
 | API Server | `FastAPI` + `Uvicorn` | REST API for model inference |
 | Serialization | `joblib` | Save/load fitted scaler objects |
 
