@@ -47,7 +47,7 @@ class CNNAutoencoder(nn.Module):
     """
     Conv2D Autoencoder for (1, 128, 64) spectrogram patches.
     Encoder: 5 conv layers with stride-2 downsampling.
-    Bottleneck: (128, 4, 2) = 1024 values -> 8:1 compression.
+    Bottleneck: Dense layer compressing to 64 dimensions.
     Decoder: 5 transposed conv layers.
     """
     def __init__(self):
@@ -58,6 +58,11 @@ class CNNAutoencoder(nn.Module):
         self.enc3 = self._enc_block(32,  64, 3, 2, 1)
         self.enc4 = self._enc_block(64, 128, 3, 2, 1)
         self.enc5 = self._enc_block(128,128, 3, 2, 1)
+        
+        # Dense Bottleneck (128 * 4 * 2 = 1024 -> 64)
+        self.fc_enc = nn.Linear(1024, 64)
+        self.fc_dec = nn.Linear(64, 1024)
+
         # Decoder
         self.dec5 = self._dec_block(128,128, 3, 2, 1, 1)
         self.dec4 = self._dec_block(128, 64, 3, 2, 1, 1)
@@ -72,26 +77,41 @@ class CNNAutoencoder(nn.Module):
     def _enc_block(self, cin, cout, k, s, p):
         return nn.Sequential(
             nn.Conv2d(cin, cout, k, stride=s, padding=p),
-            nn.BatchNorm2d(cout), nn.LeakyReLU(0.2, inplace=True))
+            nn.BatchNorm2d(cout), 
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout2d(0.1) # Spatial dropout to prevent pixel memorization
+        )
 
     def _dec_block(self, cin, cout, k, s, p, op):
         return nn.Sequential(
             nn.ConvTranspose2d(cin, cout, k, stride=s, padding=p, output_padding=op),
-            nn.BatchNorm2d(cout), nn.LeakyReLU(0.2, inplace=True))
+            nn.BatchNorm2d(cout), 
+            nn.LeakyReLU(0.2, inplace=True)
+        )
 
     def forward(self, x):
         # Encode
-        e1 = self.enc1(x)   # (16, 64, 32)
-        e2 = self.enc2(e1)  # (32, 32, 16)
-        e3 = self.enc3(e2)  # (64, 16, 8)
-        e4 = self.enc4(e3)  # (128, 8, 4)
-        e5 = self.enc5(e4)  # (128, 4, 2)
+        e1 = self.enc1(x)   # (B, 16, 64, 32)
+        e2 = self.enc2(e1)  # (B, 32, 32, 16)
+        e3 = self.enc3(e2)  # (B, 64, 16, 8)
+        e4 = self.enc4(e3)  # (B, 128, 8, 4)
+        e5 = self.enc5(e4)  # (B, 128, 4, 2)
+        
+        # Flatten and bottleneck
+        batch_size = e5.size(0)
+        flat = e5.view(batch_size, -1)
+        encoded = self.fc_enc(flat)
+        
+        # Expand and reshape
+        decoded_flat = self.fc_dec(encoded)
+        d_in = decoded_flat.view(batch_size, 128, 4, 2)
+        
         # Decode
-        d5 = self.dec5(e5)  # (128, 8, 4)
-        d4 = self.dec4(d5)  # (64, 16, 8)
-        d3 = self.dec3(d4)  # (32, 32, 16)
-        d2 = self.dec2(d3)  # (16, 64, 32)
-        d1 = self.dec1(d2)  # (1, 128, 64)
+        d5 = self.dec5(d_in)  # (B, 128, 8, 4)
+        d4 = self.dec4(d5)  # (B, 64, 16, 8)
+        d3 = self.dec3(d4)  # (B, 32, 32, 16)
+        d2 = self.dec2(d3)  # (B, 16, 64, 32)
+        d1 = self.dec1(d2)  # (B, 1, 128, 64)
         return d1
 
 # Smoke test
@@ -149,7 +169,7 @@ def train_one_machine(machine, X_train_patches, X_val_patches):
     val_loader   = DataLoader(TensorDataset(X_va), batch_size=BATCH_SIZE, shuffle=False)
 
     model = CNNAutoencoder().to(device)
-    criterion = nn.MSELoss()
+    criterion = nn.L1Loss()  # Use L1 instead of MSE to avoid shrinking small errors
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=20, T_mult=2)
 
@@ -304,15 +324,15 @@ def score_file(model, fpath, scaler, n_frames):
     if len(patches) == 0:
         return 0.0
 
-    # Compute per-patch MSE
+    # Compute per-patch L1 Error
     x = torch.FloatTensor(patches).unsqueeze(1).to(device)
     with torch.no_grad():
         recon = model(x)
-        per_patch_mse = torch.mean((x - recon)**2, dim=(1,2,3)).cpu().numpy()
+        per_patch_err = torch.mean(torch.abs(x - recon), dim=(1,2,3)).cpu().numpy()
 
     # Score: mean of top 20% worst-reconstructed patches
-    k = max(1, len(per_patch_mse) // 5)
-    top_k = np.sort(per_patch_mse)[-k:]
+    k = max(1, len(per_patch_err) // 5)
+    top_k = np.sort(per_patch_err)[-k:]
     return float(np.mean(top_k))
 
 all_results = {}
