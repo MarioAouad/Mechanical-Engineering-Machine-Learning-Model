@@ -79,7 +79,7 @@ class CNNAutoencoder(nn.Module):
             nn.Conv2d(cin, cout, k, stride=s, padding=p),
             nn.BatchNorm2d(cout), 
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout2d(0.1) # Spatial dropout to prevent pixel memorization
+            nn.Dropout2d(0.2) # Spatial dropout to prevent pixel memorization
         )
 
     def _dec_block(self, cin, cout, k, s, p, op):
@@ -89,7 +89,7 @@ class CNNAutoencoder(nn.Module):
             nn.LeakyReLU(0.2, inplace=True)
         )
 
-    def forward(self, x):
+    def forward(self, x, return_embedding=False):
         # Encode
         e1 = self.enc1(x)   # (B, 16, 64, 32)
         e2 = self.enc2(e1)  # (B, 32, 32, 16)
@@ -102,6 +102,9 @@ class CNNAutoencoder(nn.Module):
         flat = e5.view(batch_size, -1)
         encoded = self.fc_enc(flat)
         
+        if return_embedding:
+            return encoded
+            
         # Expand and reshape
         decoded_flat = self.fc_dec(encoded)
         d_in = decoded_flat.view(batch_size, 128, 4, 2)
@@ -315,25 +318,38 @@ def score_file(model, fpath, scaler, n_frames):
         pw = n_frames - log_mel.shape[1]
         log_mel = np.pad(log_mel, ((0,0),(0,pw)), constant_values=log_mel.min())
 
-    # Scale
-    H, W = log_mel.shape
-    scaled = scaler.transform(log_mel.reshape(1, H*W)).reshape(H, W)
+    # =========================================================
+    # FIX 1: TIME-INDEPENDENT SCALING
+    # Transpose so time is rows, mels are columns. Scale, then transpose back.
+    # (Requires scaler to be fitted on shape (-1, 128) during preprocessing)
+    # =========================================================
+    scaled = scaler.transform(log_mel.T).T 
+    
+    # Use this line ONLY if you haven't retrained your scalers yet:
+    # scaled = scaler.transform(log_mel.reshape(1, log_mel.shape[0]*log_mel.shape[1])).reshape(log_mel.shape[0], log_mel.shape[1])
 
     # Extract patches
     patches = extract_patches(scaled)
     if len(patches) == 0:
         return 0.0
 
-    # Compute per-patch L1 Error
+    # =========================================================
+    # FIX 2: MEAN SQUARED ERROR (MSE)
+    # Use MSE to heavily penalize loud, localized anomaly spikes
+    # =========================================================
     x = torch.FloatTensor(patches).unsqueeze(1).to(device)
     with torch.no_grad():
         recon = model(x)
-        per_patch_err = torch.mean(torch.abs(x - recon), dim=(1,2,3)).cpu().numpy()
+        # Calculate MSE instead of L1 absolute difference
+        per_patch_err = torch.mean((x - recon)**2, dim=(1,2,3)).cpu().numpy()
 
-    # Score: mean of top 20% worst-reconstructed patches
-    k = max(1, len(per_patch_err) // 5)
-    top_k = np.sort(per_patch_err)[-k:]
-    return float(np.mean(top_k))
+    # =========================================================
+    # FIX 3: PINPOINT ANOMALY SCORING
+    # Don't dilute the score with normal patches. Just take the 2 worst patches.
+    # =========================================================
+    # Sort errors in ascending order, take the last 2 (the highest errors)
+    top_2 = np.sort(per_patch_err)[-2:]
+    return float(np.mean(top_2))
 
 all_results = {}
 for machine in machine_types:
