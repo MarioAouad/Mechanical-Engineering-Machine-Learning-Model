@@ -219,41 +219,47 @@ for machine in machine_types:
 
     print(f"  Found {len(wav_files)} .wav files in {train_dir}")
 
-    spectrogram_list = []
-
+    # Step 1: Extract all unique spectrograms first
+    spec_dict = {}
     for i, fpath in enumerate(wav_files):
         y, sr = librosa.load(fpath, sr=SAMPLE_RATE)
-
         mel_spec = librosa.feature.melspectrogram(
-            y=y,
-            sr=sr,
-            n_fft=N_FFT,
-            hop_length=HOP_LENGTH,
-            n_mels=N_MELS
+            y=y, sr=sr, n_fft=N_FFT, hop_length=HOP_LENGTH, n_mels=N_MELS
         )
-
-        log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
-        spectrogram_list.append(log_mel_spec)
+        # CRITICAL FIX: ref=1.0 retains absolute energy across files.
+        # ref=np.max was normalizing every file to 0dB, destroying relative amplitudes!
+        log_mel_spec = librosa.power_to_db(mel_spec, ref=1.0)
+        spec_dict[fpath] = log_mel_spec
 
         if (i + 1) % 200 == 0 or (i + 1) == len(wav_files):
             print(f"    Processed {i + 1}/{len(wav_files)} files...")
 
-    X_all = np.array(spectrogram_list)
-    print(f"  Combined array shape: {X_all.shape}")
-    print(f"  Value range: [{X_all.min():.2f}, {X_all.max():.2f}] dB")
+    # Step 2: Split into source and target to handle domain shift
+    src_files = [f for f in wav_files if "source" in os.path.basename(f)]
+    tgt_files = [f for f in wav_files if "target" in os.path.basename(f)]
 
-    X_train, X_val = train_test_split(
-        X_all,
-        test_size=VAL_SPLIT,
-        random_state=RANDOM_STATE
-    )
+    if not src_files and not tgt_files:
+        tr_files, va_files = train_test_split(wav_files, test_size=VAL_SPLIT, random_state=RANDOM_STATE)
+    else:
+        src_tr, src_va = train_test_split(src_files, test_size=VAL_SPLIT, random_state=RANDOM_STATE) if src_files else ([], [])
+        tgt_tr, tgt_va = train_test_split(tgt_files, test_size=VAL_SPLIT, random_state=RANDOM_STATE) if tgt_files else ([], [])
+        
+        # CRITICAL FIX: Oversample target domain in training set
+        # DCASE first-shot provides ~990 source and ~10 target.
+        # We oversample target to match source, so Autoencoder learns to reconstruct target normal perfectly.
+        oversample = max(1, len(src_tr) // max(1, len(tgt_tr))) if tgt_tr and src_tr else 1
+        tr_files = src_tr + tgt_tr * oversample
+        va_files = src_va + tgt_va
+        print(f"    Domain Shift Fix: Oversampled {len(tgt_tr)} target train files by {oversample}x")
 
-    print(f"\n  Train/Val Split (seed={RANDOM_STATE}):")
-    print(f"    X_train : {X_train.shape}  ({X_train.shape[0]} samples)")
-    print(f"    X_val   : {X_val.shape}  ({X_val.shape[0]} samples)")
+    X_train = np.array([spec_dict[f] for f in tr_files])
+    X_val = np.array([spec_dict[f] for f in va_files])
+
+    print(f"  Combined train shape: {X_train.shape}, val shape: {X_val.shape}")
+    print(f"  Value range: [{X_train.min():.2f}, {X_train.max():.2f}] dB")
 
     N_train, H, W = X_train.shape
-    N_val = X_val.shape[0]
+    N_val, _, _ = X_val.shape
 
     # Time-Independent Scaling: flatten to (-1, 128)
     X_train_flat = X_train.transpose(0, 2, 1).reshape(-1, H)
@@ -268,7 +274,8 @@ for machine in machine_types:
 
     print(f"\n  After MinMaxScaler(0, 1):")
     print(f"    X_train range: [{X_train_scaled.min():.4f}, {X_train_scaled.max():.4f}]")
-    print(f"    X_val   range: [{X_val_scaled.min():.4f}, {X_val_scaled.max():.4f}]")
+    if N_val > 0:
+        print(f"    X_val   range: [{X_val_scaled.min():.4f}, {X_val_scaled.max():.4f}]")
 
     train_path = os.path.join(processed_dir, "X_train.npy")
     val_path = os.path.join(processed_dir, "X_val.npy")

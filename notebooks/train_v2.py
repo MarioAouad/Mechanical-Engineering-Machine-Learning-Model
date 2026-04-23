@@ -1,12 +1,20 @@
 """
-CNN Autoencoder for Acoustic Anomaly Detection (DCASE 2024 Task 2)
-Patch-based Conv2D approach for maximum detection accuracy.
+CNN Autoencoder V2 — Train + Evaluate (DCASE 2024 Task 2)
+
+Key changes from V1:
+  - 3-layer CNN (simpler, less overfitting risk)
+  - Linear output (no Sigmoid — can reconstruct any z-scored value)
+  - MSE loss (matches evaluation metric)
+  - No SpecAugment (standard AE, not denoising)
+  - No Dropout (simpler model doesn't need heavy regularization)
+  - Z-score normalized scoring (neutralizes domain-dependent error baselines)
+  - Saves to models_v2/ and results_v2/ (does NOT overwrite V1)
 """
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 import numpy as np
-import os, sys, copy, time, glob, librosa, joblib
+import os, copy, time, glob, librosa, joblib
 from sklearn.metrics import roc_auc_score, roc_curve
 
 os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -18,22 +26,22 @@ import matplotlib.pyplot as plt
 # ==========================================================================
 # CONFIG
 # ==========================================================================
-PATCH_WIDTH    = 64    # frames per patch (~2 sec)
-PATCH_STRIDE   = 32    # 50% overlap
+PATCH_WIDTH    = 64
+PATCH_STRIDE   = 32
 BATCH_SIZE     = 128
-LEARNING_RATE  = 1e-3
-WEIGHT_DECAY   = 1e-4
+LEARNING_RATE  = 1e-4
+WEIGHT_DECAY   = 1e-5
 NUM_EPOCHS     = 150
-PATIENCE       = 20
+PATIENCE       = 25
 SAMPLE_RATE    = 16000
 N_MELS         = 128
 HOP_LENGTH     = 512
 N_FFT          = 2048
 
-PROCESSED_DIR = os.path.join("data", "processed")
+PROCESSED_DIR = os.path.join("data", "processed_v2")
 RAW_DIR       = os.path.join("data", "raw")
-MODELS_DIR    = os.path.join("models_cnn")
-RESULTS_DIR   = os.path.join("results_cnn")
+MODELS_DIR    = os.path.join("models_v2")
+RESULTS_DIR   = os.path.join("results_v2")
 os.makedirs(MODELS_DIR, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
@@ -41,84 +49,71 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Device: {device} | PyTorch: {torch.__version__}")
 
 # ==========================================================================
-# CNN AUTOENCODER
+# CNN AUTOENCODER V2
 # ==========================================================================
-class CNNAutoencoder(nn.Module):
+class CNNAutoencoderV2(nn.Module):
     """
-    Conv2D Autoencoder for (1, 128, 64) spectrogram patches.
-    Encoder: 5 conv layers with stride-2 downsampling.
-    Bottleneck: Dense layer compressing to 64 dimensions.
-    Decoder: 5 transposed conv layers.
+    3-layer Conv2D Autoencoder for (1, 128, 64) spectrogram patches.
+    Linear output — can reconstruct any value (matches z-scored input).
+    128-dim bottleneck for richer embeddings.
     """
-    def __init__(self):
+    def __init__(self, bottleneck_dim=128):
         super().__init__()
-        # Encoder
-        self.enc1 = self._enc_block(1,   16, 5, 2, 2)
-        self.enc2 = self._enc_block(16,  32, 5, 2, 2)
-        self.enc3 = self._enc_block(32,  64, 3, 2, 1)
-        self.enc4 = self._enc_block(64, 128, 3, 2, 1)
-        self.enc5 = self._enc_block(128,128, 3, 2, 1)
-        
-        # Dense Bottleneck (128 * 4 * 2 = 1024 -> 64)
-        self.fc_enc = nn.Linear(1024, 64)
-        self.fc_dec = nn.Linear(64, 1024)
-
-        # Decoder
-        self.dec5 = self._dec_block(128,128, 3, 2, 1, 1)
-        self.dec4 = self._dec_block(128, 64, 3, 2, 1, 1)
-        self.dec3 = self._dec_block(64,  32, 3, 2, 1, 1)
-        self.dec2 = self._dec_block(32,  16, 5, 2, 2, 1)
-        # Final layer: no BN, sigmoid output
-        self.dec1 = nn.Sequential(
-            nn.ConvTranspose2d(16, 1, 5, stride=2, padding=2, output_padding=1),
-            nn.Sigmoid()
+        # Encoder: 3 conv layers with stride-2 downsampling
+        self.enc1 = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True)
         )
-
-    def _enc_block(self, cin, cout, k, s, p):
-        return nn.Sequential(
-            nn.Conv2d(cin, cout, k, stride=s, padding=p),
-            nn.BatchNorm2d(cout), 
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout2d(0.2) # Spatial dropout to prevent pixel memorization
+        self.enc2 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True)
         )
-
-    def _dec_block(self, cin, cout, k, s, p, op):
-        return nn.Sequential(
-            nn.ConvTranspose2d(cin, cout, k, stride=s, padding=p, output_padding=op),
-            nn.BatchNorm2d(cout), 
-            nn.LeakyReLU(0.2, inplace=True)
+        self.enc3 = nn.Sequential(
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True)
         )
+        # Bottleneck: 128*16*8 = 16384 → bottleneck_dim
+        self.flatten_size = 128 * 16 * 8
+        self.fc_enc = nn.Linear(self.flatten_size, bottleneck_dim)
+        self.fc_dec = nn.Linear(bottleneck_dim, self.flatten_size)
+
+        # Decoder: 3 transposed conv layers
+        self.dec3 = nn.Sequential(
+            nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True)
+        )
+        self.dec2 = nn.Sequential(
+            nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True)
+        )
+        # Final layer: NO activation (linear output)
+        self.dec1 = nn.ConvTranspose2d(32, 1, kernel_size=3, stride=2, padding=1, output_padding=1)
 
     def forward(self, x, return_embedding=False):
         # Encode
-        e1 = self.enc1(x)   # (B, 16, 64, 32)
-        e2 = self.enc2(e1)  # (B, 32, 32, 16)
-        e3 = self.enc3(e2)  # (B, 64, 16, 8)
-        e4 = self.enc4(e3)  # (B, 128, 8, 4)
-        e5 = self.enc5(e4)  # (B, 128, 4, 2)
-        
-        # Flatten and bottleneck
-        batch_size = e5.size(0)
-        flat = e5.view(batch_size, -1)
-        encoded = self.fc_enc(flat)
-        
+        e1 = self.enc1(x)    # (B, 32, 64, 32)
+        e2 = self.enc2(e1)   # (B, 64, 32, 16)
+        e3 = self.enc3(e2)   # (B, 128, 16, 8)
+        # Bottleneck
+        flat = e3.view(e3.size(0), -1)
+        embedding = self.fc_enc(flat)
         if return_embedding:
-            return encoded
-            
-        # Expand and reshape
-        decoded_flat = self.fc_dec(encoded)
-        d_in = decoded_flat.view(batch_size, 128, 4, 2)
-        
+            return embedding
         # Decode
-        d5 = self.dec5(d_in)  # (B, 128, 8, 4)
-        d4 = self.dec4(d5)  # (B, 64, 16, 8)
-        d3 = self.dec3(d4)  # (B, 32, 32, 16)
-        d2 = self.dec2(d3)  # (B, 16, 64, 32)
-        d1 = self.dec1(d2)  # (B, 1, 128, 64)
+        dec_flat = self.fc_dec(embedding)
+        d_in = dec_flat.view(-1, 128, 16, 8)
+        d3 = self.dec3(d_in)  # (B, 64, 32, 16)
+        d2 = self.dec2(d3)    # (B, 32, 64, 32)
+        d1 = self.dec1(d2)    # (B, 1, 128, 64)
         return d1
 
 # Smoke test
-m = CNNAutoencoder().to(device)
+m = CNNAutoencoderV2().to(device)
 dummy = torch.randn(2, 1, 128, PATCH_WIDTH).to(device)
 with torch.no_grad():
     out = m(dummy)
@@ -136,27 +131,11 @@ def extract_patches(spectrogram, width=PATCH_WIDTH, stride=PATCH_STRIDE):
     patches = []
     for start in range(0, W - width + 1, stride):
         patches.append(spectrogram[:, start:start+width])
-    # Ensure we get the rightmost edge
     if patches and (W - width) % stride != 0:
         patches.append(spectrogram[:, W-width:W])
     if not patches and W >= width:
         patches.append(spectrogram[:, :width])
-    return np.array(patches)  # (N, 128, 64)
-
-def augment_patch(patch):
-    """SpecAugment: random freq/time masking for regularization."""
-    p = patch.clone()
-    # Frequency mask (mask 1-8 mel bands)
-    if torch.rand(1) < 0.5:
-        f = torch.randint(1, 9, (1,)).item()
-        f0 = torch.randint(0, 128 - f, (1,)).item()
-        p[:, f0:f0+f, :] = 0
-    # Time mask (mask 1-8 frames)
-    if torch.rand(1) < 0.5:
-        t = torch.randint(1, 9, (1,)).item()
-        t0 = torch.randint(0, PATCH_WIDTH - t, (1,)).item()
-        p[:, :, t0:t0+t] = 0
-    return p
+    return np.array(patches)
 
 # ==========================================================================
 # TRAINING FUNCTION
@@ -164,24 +143,18 @@ def augment_patch(patch):
 def train_one_machine(machine, X_train_patches, X_val_patches):
     print(f"  Train patches: {X_train_patches.shape} | Val patches: {X_val_patches.shape}")
 
-    # Add channel dim: (N, 128, 64) -> (N, 1, 128, 64)
     X_tr = torch.FloatTensor(X_train_patches).unsqueeze(1)
     X_va = torch.FloatTensor(X_val_patches).unsqueeze(1)
 
     train_loader = DataLoader(TensorDataset(X_tr), batch_size=BATCH_SIZE, shuffle=True)
     val_loader   = DataLoader(TensorDataset(X_va), batch_size=BATCH_SIZE, shuffle=False)
 
-    model = CNNAutoencoder().to(device)
-    criterion = nn.L1Loss()  # Use L1 instead of MSE to avoid shrinking small errors
-    
-    # AdamW is generally preferred over Adam when using weight_decay, as it decouples the 
-    # weight decay from the gradient updates, leading to better generalization.
+    model = CNNAutoencoderV2().to(device)
+    criterion = nn.MSELoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-    
-    # CRITICAL FIX: CosineAnnealingWarmRestarts was restarting the LR at epoch 20, 
-    # spiking the loss and causing Early Stopping to trigger exactly 20 epochs later at epoch 40.
-    # ReduceLROnPlateau is much safer and pairs perfectly with Early Stopping.
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.5, patience=7, min_lr=1e-6
+    )
 
     best_val = float('inf')
     best_state = None
@@ -189,16 +162,13 @@ def train_one_machine(machine, X_train_patches, X_val_patches):
     history = {'train': [], 'val': []}
 
     for epoch in range(NUM_EPOCHS):
-        # Train
+        # Train — standard AE (NO SpecAugment)
         model.train()
         losses = []
         for (batch,) in train_loader:
             batch = batch.to(device)
-            # Apply SpecAugment
-            aug_batch = torch.stack([augment_patch(b) for b in batch])
-            aug_batch = aug_batch.to(device)
-            output = model(aug_batch)
-            loss = criterion(output, batch)  # Compare reconstruction to CLEAN input
+            output = model(batch)
+            loss = criterion(output, batch)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -217,8 +187,7 @@ def train_one_machine(machine, X_train_patches, X_val_patches):
         avg_va = np.mean(val_losses)
         history['train'].append(avg_tr)
         history['val'].append(avg_va)
-        
-        # Step the plateau scheduler with validation loss
+
         scheduler.step(avg_va)
         lr = optimizer.param_groups[0]['lr']
 
@@ -242,7 +211,27 @@ def train_one_machine(machine, X_train_patches, X_val_patches):
     return model, history
 
 # ==========================================================================
-# PHASE 2: TRAIN
+# COMPUTE TRAINING RECONSTRUCTION STATS (for z-score scoring)
+# ==========================================================================
+def compute_train_stats(model, X_train_patches):
+    """Compute mean and std of reconstruction MSE on training patches."""
+    model.eval()
+    X = torch.FloatTensor(X_train_patches).unsqueeze(1)
+    loader = DataLoader(TensorDataset(X), batch_size=BATCH_SIZE, shuffle=False)
+
+    all_errors = []
+    with torch.no_grad():
+        for (batch,) in loader:
+            batch = batch.to(device)
+            recon = model(batch)
+            per_patch = torch.mean((batch - recon)**2, dim=(1,2,3)).cpu().numpy()
+            all_errors.append(per_patch)
+
+    all_errors = np.concatenate(all_errors)
+    return float(np.mean(all_errors)), float(np.std(all_errors))
+
+# ==========================================================================
+# PHASE 1: TRAIN ALL MACHINES
 # ==========================================================================
 machine_types = sorted([d for d in os.listdir(PROCESSED_DIR)
                         if os.path.isdir(os.path.join(PROCESSED_DIR, d))])
@@ -259,7 +248,6 @@ for machine in machine_types:
     X_val   = np.load(os.path.join(PROCESSED_DIR, machine, "X_val.npy"))
     print(f"  Raw data: train={X_train.shape}, val={X_val.shape}")
 
-    # Extract patches
     train_patches = np.concatenate([extract_patches(s) for s in X_train])
     val_patches   = np.concatenate([extract_patches(s) for s in X_val])
 
@@ -267,28 +255,37 @@ for machine in machine_types:
     model, hist = train_one_machine(machine, train_patches, val_patches)
     elapsed = time.time() - t0
 
+    # Compute training reconstruction stats for z-score scoring
+    print(f"  Computing training reconstruction stats...")
+    train_mu, train_sigma = compute_train_stats(model, train_patches)
+    print(f"  Train MSE: mu={train_mu:.6f}, sigma={train_sigma:.6f}")
+
     best_v = min(hist['val'])
     best_ep = hist['val'].index(best_v) + 1
 
     save_dir = os.path.join(MODELS_DIR, machine)
     os.makedirs(save_dir, exist_ok=True)
     torch.save(model.state_dict(), os.path.join(save_dir, "best_model.pth"))
-    torch.save({'best_val': best_v, 'best_epoch': best_ep,
-                'total_epochs': len(hist['val']), 'n_frames': X_train.shape[2]},
-               os.path.join(save_dir, "metadata.pth"))
+    torch.save({
+        'best_val': best_v, 'best_epoch': best_ep,
+        'total_epochs': len(hist['val']), 'n_frames': X_train.shape[2],
+        'train_mse_mean': train_mu, 'train_mse_std': train_sigma
+    }, os.path.join(save_dir, "metadata.pth"))
 
     all_histories[machine] = hist
-    training_summary.append({'machine': machine, 'best_val': best_v,
-                             'best_ep': best_ep, 'epochs': len(hist['val']),
-                             'time': elapsed, 'n_patches': len(train_patches)})
+    training_summary.append({
+        'machine': machine, 'best_val': best_v, 'best_ep': best_ep,
+        'epochs': len(hist['val']), 'time': elapsed,
+        'n_patches': len(train_patches), 'train_mu': train_mu, 'train_sigma': train_sigma
+    })
     print(f"  Best val: {best_v:.6f} (ep {best_ep}) | {elapsed:.0f}s | {len(train_patches)} patches\n")
 
 total_time = time.time() - total_start
 print(f"\n{'='*60}\nTRAINING DONE — {total_time:.0f}s ({total_time/60:.1f} min)\n{'='*60}")
-print(f"{'Machine':<12} | {'Val Loss':>10} | {'Epoch':>5} | {'Patches':>8} | {'Time':>6}")
-print("-"*55)
+print(f"{'Machine':<12} | {'Val Loss':>10} | {'Epoch':>5} | {'Patches':>8} | {'Time':>6} | {'mu':>10} | {'sigma':>10}")
+print("-"*80)
 for s in training_summary:
-    print(f"{s['machine']:<12} | {s['best_val']:10.6f} | {s['best_ep']:5d} | {s['n_patches']:8d} | {s['time']:5.0f}s")
+    print(f"{s['machine']:<12} | {s['best_val']:10.6f} | {s['best_ep']:5d} | {s['n_patches']:8d} | {s['time']:5.0f}s | {s['train_mu']:10.6f} | {s['train_sigma']:10.6f}")
 
 # Training curves
 fig, axes = plt.subplots(2, 4, figsize=(20, 8))
@@ -302,24 +299,24 @@ for idx, (mc, h) in enumerate(all_histories.items()):
     ax.axvline(bp, color='red', ls='--', alpha=0.5, label=f'Best ep {bp}')
     ax.set_title(mc, fontweight='bold'); ax.legend(fontsize=7); ax.grid(alpha=0.3)
 for i in range(len(all_histories), 8): axes[i].set_visible(False)
-plt.suptitle('CNN Training Curves', fontsize=14, fontweight='bold')
+plt.suptitle('CNN V2 Training Curves', fontsize=14, fontweight='bold')
 plt.tight_layout()
 plt.savefig(os.path.join(MODELS_DIR, "training_curves.png"), dpi=150, bbox_inches='tight')
 plt.close()
 print(f"Saved training curves.\n")
 
 # ==========================================================================
-# PHASE 3: EVALUATE
+# PHASE 2: EVALUATE WITH Z-SCORE SCORING
 # ==========================================================================
-print(f"{'='*60}\nPHASE 3: EVALUATION\n{'='*60}")
+print(f"{'='*60}\nPHASE 2: EVALUATION (Z-Score Scoring)\n{'='*60}")
 
-def score_file(model, fpath, scaler, n_frames):
-    """Process one test wav file and return anomaly score."""
+def score_file(model, fpath, scaler, n_frames, train_mu, train_sigma):
+    """Score a test file using z-score normalized reconstruction error."""
     y, sr = librosa.load(fpath, sr=SAMPLE_RATE)
     mel = librosa.feature.melspectrogram(y=y, sr=sr, n_fft=N_FFT,
                                          hop_length=HOP_LENGTH, n_mels=N_MELS)
-    # CRITICAL FIX: use ref=1.0 to match training and retain absolute energy
-    log_mel = librosa.power_to_db(mel, ref=1.0)
+    # ref=np.max to match training preprocessing
+    log_mel = librosa.power_to_db(mel, ref=np.max)
 
     # Pad/truncate
     if log_mel.shape[1] > n_frames:
@@ -328,34 +325,25 @@ def score_file(model, fpath, scaler, n_frames):
         pw = n_frames - log_mel.shape[1]
         log_mel = np.pad(log_mel, ((0,0),(0,pw)), constant_values=log_mel.min())
 
-    # =========================================================
-    # FIX 1: TIME-INDEPENDENT SCALING
-    # Transpose so time is rows, mels are columns. Scale, then transpose back.
-    # (Requires scaler to be fitted on shape (-1, 128) during preprocessing)
-    # =========================================================
-    scaled = scaler.transform(log_mel.T).T 
+    # Apply same StandardScaler (per mel band)
+    scaled = scaler.transform(log_mel.T).T
 
     # Extract patches
     patches = extract_patches(scaled)
     if len(patches) == 0:
         return 0.0
 
-    # =========================================================
-    # FIX 2: MEAN SQUARED ERROR (MSE)
-    # Use MSE to heavily penalize loud, localized anomaly spikes
-    # =========================================================
+    # Compute per-patch MSE
     x = torch.FloatTensor(patches).unsqueeze(1).to(device)
     with torch.no_grad():
         recon = model(x)
-        # Calculate MSE instead of L1 absolute difference
-        per_patch_err = torch.mean((x - recon)**2, dim=(1,2,3)).cpu().numpy()
+        per_patch_mse = torch.mean((x - recon)**2, dim=(1,2,3)).cpu().numpy()
 
-    # =========================================================
-    # FIX 3: IMPROVED SCORING AND CALIBRATION
-    # Using the mean of ALL patches improves calibration for low FP rates.
-    # Taking only top 2 makes the score highly volatile and causes false positives.
-    # =========================================================
-    return float(np.mean(per_patch_err))
+    # Z-score normalize against training distribution
+    z_scores = (per_patch_mse - train_mu) / (train_sigma + 1e-10)
+
+    # Anomaly score = mean z-score across all patches
+    return float(np.mean(z_scores))
 
 all_results = {}
 for machine in machine_types:
@@ -363,13 +351,16 @@ for machine in machine_types:
 
     meta = torch.load(os.path.join(MODELS_DIR, machine, "metadata.pth"),
                       map_location=device, weights_only=False)
-    model = CNNAutoencoder().to(device)
+    model = CNNAutoencoderV2().to(device)
     model.load_state_dict(torch.load(os.path.join(MODELS_DIR, machine, "best_model.pth"),
                                      map_location=device, weights_only=True))
     model.eval()
 
     scaler = joblib.load(os.path.join(PROCESSED_DIR, machine, "scaler.save"))
-    n_frames = meta['n_frames']
+    n_frames   = meta['n_frames']
+    train_mu   = meta['train_mse_mean']
+    train_sigma = meta['train_mse_std']
+    print(f"  Train stats: mu={train_mu:.6f}, sigma={train_sigma:.6f}")
 
     test_dir = os.path.join(RAW_DIR, machine, "test")
     wav_files = sorted(glob.glob(os.path.join(test_dir, "*.wav")))
@@ -382,7 +373,7 @@ for machine in machine_types:
         elif "normal" in fn: label = 0
         else: continue
         try:
-            s = score_file(model, fp, scaler, n_frames)
+            s = score_file(model, fp, scaler, n_frames, train_mu, train_sigma)
             scores.append(s); labels.append(label)
         except Exception as e:
             print(f"  Error: {fn}: {e}")
@@ -401,7 +392,7 @@ for machine in machine_types:
 # RESULTS
 # ==========================================================================
 print(f"\n{'='*70}")
-print(f"CNN ANOMALY DETECTION RESULTS")
+print(f"CNN V2 ANOMALY DETECTION RESULTS")
 print(f"{'='*70}")
 print(f"{'Machine':<12} | {'AUC':>8} | {'pAUC':>8} | {'Normal':>6} | {'Anom':>5} | {'Verdict':>10}")
 print("-"*65)
@@ -425,7 +416,7 @@ for i, (mc, r) in enumerate(sorted(all_results.items())):
     ax.set_title(f"{mc} (AUC={r['auc']:.3f})", fontweight='bold')
     ax.legend(fontsize=8); ax.grid(alpha=0.3)
 for i in range(len(all_results), 8): axes[i].set_visible(False)
-plt.suptitle('CNN Score Distributions', fontsize=14, fontweight='bold')
+plt.suptitle('CNN V2 Score Distributions (Z-Score Normalized)', fontsize=14, fontweight='bold')
 plt.tight_layout()
 plt.savefig(os.path.join(RESULTS_DIR, "score_distributions.png"), dpi=150, bbox_inches='tight')
 plt.close()
@@ -444,7 +435,7 @@ for i, (mc, r) in enumerate(sorted(all_results.items())):
     ax.set_title(mc, fontweight='bold'); ax.legend(fontsize=8, loc='lower right')
     ax.grid(alpha=0.3); ax.set_xlim([0,1]); ax.set_ylim([0,1])
 for i in range(len(all_results), 8): axes[i].set_visible(False)
-plt.suptitle('CNN ROC Curves', fontsize=14, fontweight='bold')
+plt.suptitle('CNN V2 ROC Curves', fontsize=14, fontweight='bold')
 plt.tight_layout()
 plt.savefig(os.path.join(RESULTS_DIR, "roc_curves.png"), dpi=150, bbox_inches='tight')
 plt.close()
