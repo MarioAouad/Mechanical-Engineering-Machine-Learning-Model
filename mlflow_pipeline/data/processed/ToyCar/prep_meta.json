@@ -1,0 +1,12 @@
+{
+  "SPECTROGRAM_TYPE": "Mel",
+  "SCALER_TYPE": "MinMax",
+  "N_FFT": 1024,
+  "HOP_LENGTH": 512,
+  "N_MELS": 128,
+  "SAMPLE_RATE": 16000,
+  "VAL_SPLIT": 0.15,
+  "RANDOM_STATE": 42,
+  "SPEC_HEIGHT": 128,
+  "SPEC_WIDTH": 376
+}

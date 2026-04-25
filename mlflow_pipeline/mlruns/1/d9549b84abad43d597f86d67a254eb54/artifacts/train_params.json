@@ -1,0 +1,17 @@
+{
+  "LOSS_FUNCTION": "MSE",
+  "OPTIMIZER": "AdamW",
+  "BOTTLENECK_DIM": 32,
+  "BATCH_SIZE": 512,
+  "LEARNING_RATE": 0.001,
+  "WEIGHT_DECAY": 1e-05,
+  "EPOCHS": 200,
+  "PATIENCE": 15,
+  "PATCH_WIDTH": 32,
+  "PATCH_STRIDE": 16,
+  "NOISE_STD": 0.0,
+  "MIXUP_ALPHA": 0.0,
+  "DROPOUT_RATE": 0.1,
+  "DENOISING": false,
+  "MIXUP": false
+}

@@ -1,0 +1,13 @@
+{
+    "PATCH_WIDTH": 64,
+    "PATCH_STRIDE": 32,
+    "BATCH_SIZE": 128,
+    "LEARNING_RATE": 0.001,
+    "WEIGHT_DECAY": 1e-05,
+    "NUM_EPOCHS": 150,
+    "PATIENCE": 20,
+    "BOTTLENECK_DIM": 64,
+    "LOSS_FUNCTION": "L1Loss",
+    "DENOISING_FACTOR": 0.1,
+    "MIXUP_ENABLED": true
+}

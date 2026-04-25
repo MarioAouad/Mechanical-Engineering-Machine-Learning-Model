@@ -1,0 +1,17 @@
+{
+  "LOSS_FUNCTION": "Huber",
+  "OPTIMIZER": "AdamW",
+  "BOTTLENECK_DIM": 64,
+  "BATCH_SIZE": 128,
+  "LEARNING_RATE": 0.001,
+  "WEIGHT_DECAY": 0.0001,
+  "EPOCHS": 300,
+  "PATIENCE": 20,
+  "PATCH_WIDTH": 64,
+  "PATCH_STRIDE": 32,
+  "NOISE_STD": 0.02,
+  "MIXUP_ALPHA": 0.2,
+  "DROPOUT_RATE": 0.2,
+  "DENOISING": true,
+  "MIXUP": true
+}
