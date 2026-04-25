@@ -1,26 +1,83 @@
 # ===========================================================================
-# requirements.txt — Acoustic Anomaly Detection Pipeline
+# requirements.txt — Acoustic Anomaly Detection Pipeline (DCASE 2024 Task 2)
 # ===========================================================================
-# Install with:  pip install -r requirements.txt
+#
+# Install all dependencies with:
+#   pip install -r requirements.txt
+#
+# For GPU-accelerated PyTorch (recommended for training), install separately:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#
 # ===========================================================================
 
-# --- Core Scientific Computing ---
+# ---------------------------------------------------------------------------
+# CORE SCIENTIFIC COMPUTING
+# ---------------------------------------------------------------------------
+# NumPy is the foundation for all numerical operations. Spectrograms are
+# stored as NumPy arrays (ndarrays). Every step of the pipeline — from
+# loading audio to computing reconstruction errors — relies on NumPy.
 numpy
 
-# --- Audio Processing ---
+# ---------------------------------------------------------------------------
+# AUDIO PROCESSING
+# ---------------------------------------------------------------------------
+# Librosa is the gold-standard Python library for audio analysis. We use it
+# for:
+#   - Loading .wav files at a fixed 16 kHz sample rate (librosa.load)
+#   - Computing Mel-frequency spectrograms (librosa.feature.melspectrogram)
+#   - Converting power spectrograms to decibels (librosa.power_to_db)
+#
+# The Mel scale compresses high frequencies to mimic human hearing, making
+# it ideal for capturing the acoustic signatures of mechanical faults.
 librosa
 
-# --- Machine Learning Utilities ---
+# SoundFile is librosa's backend for reading audio files. It's required
+# by librosa but sometimes not installed automatically on Windows.
+soundfile
+
+# ---------------------------------------------------------------------------
+# MACHINE LEARNING UTILITIES
+# ---------------------------------------------------------------------------
+# Scikit-learn provides essential ML building blocks:
+#   - MinMaxScaler: Scales spectrograms to [0, 1] for V1 pipeline (Sigmoid)
+#   - StandardScaler: Z-score normalization for V2 pipeline (Linear output)
+#   - train_test_split: Stratified splitting with reproducible random seeds
+#   - roc_auc_score: Computes AUC and pAUC for evaluation metrics
+#   - NearestNeighbors: KNN-based anomaly scoring in embedding space
 scikit-learn
+
+# Joblib serializes fitted Scaler and KNN objects to disk. This is critical
+# because the exact same scaler that was fitted on training data MUST be
+# used to transform test data. Recreating the scaler would produce
+# different scaling parameters, making all anomaly scores meaningless.
 joblib
 
-# --- Deep Learning Framework (PyTorch) ---
+# ---------------------------------------------------------------------------
+# DEEP LEARNING FRAMEWORK
+# ---------------------------------------------------------------------------
+# PyTorch is used for the CNN Autoencoder architecture. We use:
+#   - torch.nn: Layer definitions (Conv2d, ConvTranspose2d, BatchNorm2d)
+#   - torch.optim: AdamW optimizer with weight decay
+#   - torch.utils.data: DataLoader for batched GPU training
+#
+# NOTE: For GPU acceleration, install PyTorch with CUDA separately:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 torch
 
-# --- API Deployment ---
+# ---------------------------------------------------------------------------
+# API DEPLOYMENT
+# ---------------------------------------------------------------------------
+# FastAPI is a modern, high-performance web framework for building REST APIs.
+# Our server (api/app.py) uses it to serve anomaly predictions via HTTP.
+# It auto-generates interactive API documentation at /docs (Swagger UI).
 fastapi
-uvicorn
-python-multipart
 
-# --- Notebook Environment ---
-notebook
+# Uvicorn is an ASGI server that runs FastAPI applications. It handles
+# HTTP request routing, async I/O, and worker process management.
+# Usage: uvicorn api.app:app --host 0.0.0.0 --port 8000
+uvicorn
+
+# python-multipart enables FastAPI to parse multipart/form-data requests,
+# which is the format used for file uploads. Without this, the POST /predict
+# endpoint (which accepts .wav file uploads) would fail.
+python-multipart
