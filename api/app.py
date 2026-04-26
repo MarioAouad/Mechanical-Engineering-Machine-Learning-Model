@@ -25,7 +25,9 @@ from torch.utils.data import TensorDataset, DataLoader
 import librosa
 import joblib
 from fastapi import FastAPI, UploadFile, File, Query, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, RedirectResponse
+
 from sklearn.neighbors import NearestNeighbors
 
 # Add project root to path so we can find our modules
@@ -185,6 +187,16 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Serve the web UI
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    """Redirect root to the web UI."""
+    return RedirectResponse(url="/static/index.html")
+
 # Monitoring
 monitor = DriftMonitor(window_size=100)
 
@@ -234,10 +246,13 @@ def load_models():
         model.eval()
         models[machine] = model
 
-        # Load scaler
+        # Load scaler (check processed dir first, then weights dir for Docker)
         scaler_path = os.path.join(processed_dir, machine, "scaler.save")
+        scaler_path_alt = os.path.join(MODELS_DIR, machine, "scaler.save")
         if os.path.exists(scaler_path):
             scalers[machine] = joblib.load(scaler_path)
+        elif os.path.exists(scaler_path_alt):
+            scalers[machine] = joblib.load(scaler_path_alt)
 
         # Load KNN if needed for this machine's strategy
         if 'KNN' in config['strategy']:
@@ -260,7 +275,7 @@ def load_models():
                     joblib.dump(knn, knn_path)
                     print(f"  KNN fitted and saved ({len(train_embs)} embeddings)")
 
-        print(f"  ✓ {machine} ready (strategy={config['strategy']}, "
+        print(f"  [OK] {machine} ready (strategy={config['strategy']}, "
               f"threshold={config['threshold']:.6f})")
 
     print(f"\n{'='*50}")

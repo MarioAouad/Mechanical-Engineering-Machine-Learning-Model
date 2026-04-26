@@ -1,0 +1,82 @@
+# ===========================================================================
+# .dockerignore — Acoustic Anomaly Detection (DCASE 2024 Task 2)
+# ===========================================================================
+# Without this file, Docker sends the ENTIRE project directory as build
+# context — including venv (6 GB), raw audio data (2.7 GB), processed
+# data (6 GB), and zip archives (2.1 GB), resulting in a ~17 GB transfer.
+#
+# This file ensures only the files needed for the API image are sent.
+# ===========================================================================
+
+# --- Virtual environments (6+ GB) ---
+venv/
+env/
+.env/
+.venv/
+ENV/
+
+# --- Raw audio data (2.7 GB of .wav files) ---
+data/raw/
+
+# --- Processed data (6 GB of .npy arrays) ---
+# The API uses weights + KNN models, NOT raw numpy arrays at runtime
+data/processed/
+data/processed_v1/
+data/processed_v2/
+
+# --- Downloaded ZIP archives (2.1 GB) ---
+10902294/
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+
+# --- Git history ---
+.git/
+.gitignore
+
+# --- Python cache ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+notebooks/
+
+# --- IDE / Editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- Build / dist ---
+dist/
+build/
+*.egg-info/
+*.egg
+
+# --- MLflow ---
+mlruns/
+mlflow.db
+mlflow_pipeline/
+
+# --- Outputs / logs (will be created at runtime) ---
+outputs/
+logs/
+
+# --- Docs (not needed in container) ---
+docs/
+
+# --- README (not needed in container) ---
+README.md

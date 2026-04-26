@@ -104,7 +104,7 @@
   "valve": {
     "pipeline": "V1",
     "strategy": "Neg_Recon",
-    "threshold": -0.0008214439731091261,
+    "threshold": -0.0039214439731091261,
     "ref_value": "1.0",
     "n_frames": 313,
     "score_stats": {

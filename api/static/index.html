@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acoustic Anomaly Detection — DCASE 2024</title>
+    <meta name="description" content="AI-powered acoustic anomaly detection for industrial machines. Upload audio and detect anomalies in real-time.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Animated background particles -->
+    <div class="bg-particles" id="bgParticles"></div>
+
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo-section">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="24" cy="24" r="20" stroke="url(#logoGrad)" stroke-width="2.5" fill="none"/>
+                        <path d="M14 28 Q18 16, 24 24 Q30 32, 34 20" stroke="url(#logoGrad)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+                        <path d="M12 24 Q16 18, 20 24 Q24 30, 28 22 Q32 14, 36 24" stroke="url(#logoGrad2)" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.5"/>
+                        <defs>
+                            <linearGradient id="logoGrad" x1="0" y1="0" x2="48" y2="48">
+                                <stop offset="0%" stop-color="#6366f1"/>
+                                <stop offset="100%" stop-color="#06b6d4"/>
+                            </linearGradient>
+                            <linearGradient id="logoGrad2" x1="0" y1="48" x2="48" y2="0">
+                                <stop offset="0%" stop-color="#8b5cf6"/>
+                                <stop offset="100%" stop-color="#22d3ee"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <div>
+                    <h1>Acoustic Anomaly Detection</h1>
+                    <p class="subtitle">DCASE 2024 Task 2 — Machine Condition Monitoring</p>
+                </div>
+            </div>
+            <div class="header-status" id="headerStatus">
+                <span class="status-dot"></span>
+                <span>System Online</span>
+            </div>
+        </header>
+
+        <!-- Step 1: Machine Selection -->
+        <section class="step-section" id="stepMachines">
+            <div class="step-label"><span class="step-num">1</span> Select Machine Type</div>
+            <div class="machines-grid" id="machinesGrid">
+                <!-- Buttons injected by JS -->
+            </div>
+        </section>
+
+        <!-- Step 2: Audio Upload (hidden initially) -->
+        <section class="step-section hidden" id="stepUpload">
+            <div class="step-label"><span class="step-num">2</span> Upload Audio — <span id="selectedMachineName" class="highlight-text"></span></div>
+            <div class="upload-zone" id="uploadZone">
+                <div class="upload-icon">
+                    <svg viewBox="0 0 64 64" fill="none"><path d="M32 44V20M32 20L22 30M32 20L42 30" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 40v6a8 8 0 008 8h28a8 8 0 008-8v-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+                </div>
+                <p class="upload-title">Drop your <strong>.wav</strong> file here</p>
+                <p class="upload-sub">or click to browse</p>
+                <input type="file" id="audioInput" accept=".wav,audio/wav" hidden>
+            </div>
+            <div class="file-info hidden" id="fileInfo">
+                <span class="file-icon">🎵</span>
+                <span id="fileName"></span>
+                <button class="btn-clear" id="btnClear" title="Remove file">✕</button>
+            </div>
+            <button class="btn-predict hidden" id="btnPredict">
+                <span class="btn-predict-text">Analyze Audio</span>
+                <span class="btn-predict-loader hidden" id="predictLoader"></span>
+            </button>
+        </section>
+
+        <!-- Step 3: Results (hidden initially) -->
+        <section class="step-section hidden" id="stepResult">
+            <div class="step-label"><span class="step-num">3</span> Prediction Result</div>
+            <div class="result-card" id="resultCard">
+                <div class="result-badge" id="resultBadge"></div>
+                <div class="result-details" id="resultDetails"></div>
+            </div>
+            <button class="btn-secondary" id="btnReset">← Start New Analysis</button>
+        </section>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
