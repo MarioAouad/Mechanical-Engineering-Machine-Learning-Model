@@ -27,9 +27,9 @@ data/processed_v2/
 # 3. MODEL WEIGHTS (PyTorch checkpoints)
 #    Trained autoencoder weights — too large for Git (~2-3 MB each).
 # -----------------------------------------------------------------------
-weights/
-*.pth
-*.pt
+# weights/
+# *.pth
+# *.pt
 
 # -----------------------------------------------------------------------
 # 4. SERIALIZED ML OBJECTS (Scikit-learn / Joblib)
