@@ -20,6 +20,7 @@ Output:
     - pipeline (V1 or V2)
     - score statistics (mean, std, min, max, percentiles)
 """
+import argparse
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
@@ -188,11 +189,24 @@ def compute_file_score(file_features, strategy):
 # MAIN: Compute thresholds on development data
 # ==========================================================================
 def main():
+    parser = argparse.ArgumentParser(
+        description="Compute per-machine anomaly thresholds on development data only."
+    )
+    parser.add_argument(
+        "--percentile", type=float, default=95.0,
+        help="Percentile of normal training scores to use as threshold (default: 95). "
+             "Lower values = more sensitive (more anomalies flagged). "
+             "Common choices: 75, 80, 85, 90, 95."
+    )
+    args = parser.parse_args()
+    pct = args.percentile
+
     machine_types = ['ToyCar', 'ToyTrain', 'bearing', 'fan', 'gearbox', 'slider', 'valve']
     thresholds = {}
 
     print(f"\n{'='*70}")
     print(f"COMPUTING THRESHOLDS (development data only)")
+    print(f"  Using P{pct} as threshold")
     print(f"{'='*70}")
 
     for machine in machine_types:
@@ -264,18 +278,21 @@ def main():
         # Compute threshold statistics
         mean_score = float(np.mean(file_scores))
         std_score = float(np.std(file_scores))
+        p75 = float(np.percentile(file_scores, 75))
+        p80 = float(np.percentile(file_scores, 80))
+        p85 = float(np.percentile(file_scores, 85))
         p90 = float(np.percentile(file_scores, 90))
         p95 = float(np.percentile(file_scores, 95))
         p99 = float(np.percentile(file_scores, 99))
 
-        # Threshold: 95th percentile of normal training scores
-        # This means ~5% false positive rate on known normal data
-        threshold = p95
+        # Threshold: user-selected percentile of normal training scores
+        threshold = float(np.percentile(file_scores, pct))
 
         thresholds[machine] = {
             "pipeline": config['pipeline'],
             "strategy": strategy,
             "threshold": threshold,
+            "threshold_percentile": pct,
             "ref_value": str(ref_value),
             "n_frames": n_frames,
             "score_stats": {
@@ -283,6 +300,9 @@ def main():
                 "std": std_score,
                 "min": float(np.min(file_scores)),
                 "max": float(np.max(file_scores)),
+                "p75": p75,
+                "p80": p80,
+                "p85": p85,
                 "p90": p90,
                 "p95": p95,
                 "p99": p99,
@@ -293,8 +313,10 @@ def main():
         print(f"  Score distribution (normal training data):")
         print(f"    Mean ± Std  : {mean_score:.6f} ± {std_score:.6f}")
         print(f"    [Min, Max]  : [{np.min(file_scores):.6f}, {np.max(file_scores):.6f}]")
-        print(f"    P90 / P95   : {p90:.6f} / {p95:.6f}")
-        print(f"    *** THRESHOLD (P95): {threshold:.6f} ***")
+        print(f"    P75 / P80   : {p75:.6f} / {p80:.6f}")
+        print(f"    P85 / P90   : {p85:.6f} / {p90:.6f}")
+        print(f"    P95 / P99   : {p95:.6f} / {p99:.6f}")
+        print(f"    *** THRESHOLD (P{pct}): {threshold:.6f} ***")
 
     # Save thresholds
     configs_dir = os.path.join(PROJECT_ROOT, "configs")
@@ -306,6 +328,7 @@ def main():
     print(f"\n{'='*70}")
     print(f"THRESHOLDS COMPUTED — SUMMARY")
     print(f"{'='*70}")
+    print(f"  Threshold percentile: P{pct}")
     print(f"{'Machine':<12} | {'Pipeline':>4} | {'Strategy':<12} | {'Threshold':>12} | {'Mean±Std':>18}")
     print("-" * 75)
     for machine in machine_types:
