@@ -14,9 +14,10 @@ An end-to-end machine learning pipeline that detects anomalous sounds in industr
 4. [Setup & Installation](#setup--installation)
 5. [Pipeline Walkthrough](#pipeline-walkthrough)
 6. [Running the API Server](#running-the-api-server)
-7. [Monitoring & Drift Detection](#monitoring--drift-detection)
-8. [Best Results Per Machine](#best-results-per-machine)
-9. [Key Design Decisions](#key-design-decisions)
+7. [Docker Deployment](#docker-deployment)
+8. [Monitoring & Drift Detection](#monitoring--drift-detection)
+9. [Best Results Per Machine](#best-results-per-machine)
+10. [Key Design Decisions](#key-design-decisions)
 
 ---
 
@@ -374,6 +375,57 @@ curl -X POST "http://localhost:8000/predict?machine_type=fan" \
 ### Check System Health
 ```bash
 curl http://localhost:8000/health
+```
+
+---
+
+## Docker Deployment
+
+You can run the entire API server using Docker. This ensures a consistent environment regardless of your host operating system.
+
+### Option 1: Using a Pre-built Image from Docker Hub (Recommended)
+If the image is published to Docker Hub, you can pull and run it directly. *Note: You must still mount your local weights and data directories so the container can access the models and scalers.*
+
+```bash
+# Pull the image
+docker pull yourusername/acoustic-anomaly-api:latest
+
+# Run the container (mounting required directories)
+docker run -d -p 8000:8000 \
+  -v $(pwd)/weights:/app/weights \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/configs:/app/configs \
+  -v $(pwd)/logs:/app/logs \
+  yourusername/acoustic-anomaly-api:latest
+```
+
+### Option 2: Building the Image Locally
+You can build the Docker image yourself using the provided `Dockerfile`.
+
+```bash
+# Build the image locally
+docker build -t acoustic-anomaly-api:local .
+
+# Run the local image
+docker run -d -p 8000:8000 \
+  -v $(pwd)/weights:/app/weights \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/configs:/app/configs \
+  -v $(pwd)/logs:/app/logs \
+  acoustic-anomaly-api:local
+```
+
+### Publishing to Docker Hub
+To publish your own image to Docker Hub:
+```bash
+# 1. Login to Docker Hub
+docker login
+
+# 2. Tag your local image with your Docker Hub username
+docker tag acoustic-anomaly-api:local yourusername/acoustic-anomaly-api:v1.0
+
+# 3. Push the image
+docker push yourusername/acoustic-anomaly-api:v1.0
 ```
 
 ---
