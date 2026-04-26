@@ -40,6 +40,9 @@ COPY configs/ configs/
 # Copy model weights (~75 MB)
 COPY weights/ weights/
 
+# Copy documentation
+COPY README.md .
+
 # Create required directories
 RUN mkdir -p logs/predictions data/raw outputs
 

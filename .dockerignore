@@ -78,5 +78,4 @@ logs/
 # --- Docs (not needed in container) ---
 docs/
 
-# --- README (not needed in container) ---
-README.md
+
