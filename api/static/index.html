@@ -39,11 +39,81 @@
                     <p class="subtitle">DCASE 2024 Task 2 — Machine Condition Monitoring</p>
                 </div>
             </div>
-            <div class="header-status" id="headerStatus">
-                <span class="status-dot"></span>
-                <span>System Online</span>
+            <div class="header-actions">
+                <button class="btn-health-toggle" id="btnHealthToggle" title="Toggle Health Dashboard">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    <span>Health</span>
+                </button>
+                <div class="header-status" id="headerStatus">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">Connecting…</span>
+                </div>
             </div>
         </header>
+
+        <!-- Health Dashboard (hidden by default) -->
+        <section class="health-dashboard hidden" id="healthDashboard">
+            <div class="health-header">
+                <div class="health-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="health-icon"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    <span>System Health Monitor</span>
+                </div>
+                <div class="health-live-badge">
+                    <span class="live-dot"></span>
+                    LIVE
+                </div>
+            </div>
+
+            <div class="health-metrics" id="healthMetrics">
+                <div class="health-metric">
+                    <div class="metric-icon status-icon" id="metricStatusIcon">●</div>
+                    <div class="metric-body">
+                        <div class="metric-label">Status</div>
+                        <div class="metric-value" id="metricStatus">—</div>
+                    </div>
+                </div>
+                <div class="health-metric">
+                    <div class="metric-icon uptime-icon">⏱</div>
+                    <div class="metric-body">
+                        <div class="metric-label">Uptime</div>
+                        <div class="metric-value" id="metricUptime">—</div>
+                    </div>
+                </div>
+                <div class="health-metric">
+                    <div class="metric-icon requests-icon">📊</div>
+                    <div class="metric-body">
+                        <div class="metric-label">Total Requests</div>
+                        <div class="metric-value" id="metricRequests">—</div>
+                    </div>
+                </div>
+                <div class="health-metric">
+                    <div class="metric-icon anomaly-icon">🔍</div>
+                    <div class="metric-body">
+                        <div class="metric-label">Anomaly Rate</div>
+                        <div class="metric-value" id="metricAnomalyRate">—</div>
+                    </div>
+                </div>
+                <div class="health-metric">
+                    <div class="metric-icon machines-icon">⚙️</div>
+                    <div class="metric-body">
+                        <div class="metric-label">Machines Active</div>
+                        <div class="metric-value" id="metricMachines">—</div>
+                    </div>
+                </div>
+                <div class="health-metric">
+                    <div class="metric-icon alerts-icon">🔔</div>
+                    <div class="metric-body">
+                        <div class="metric-label">Alerts</div>
+                        <div class="metric-value" id="metricAlerts">—</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="health-alerts-panel hidden" id="healthAlertsPanel">
+                <div class="alerts-title">⚠️ Active Alerts</div>
+                <ul class="alerts-list" id="alertsList"></ul>
+            </div>
+        </section>
 
         <!-- Step 1: Machine Selection -->
         <section class="step-section" id="stepMachines">

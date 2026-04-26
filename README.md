@@ -1,271 +1,250 @@
 # Acoustic Anomaly Detection for Machine Condition Monitoring
 
-> **DCASE 2024 Challenge - Task 2: First-Shot Unsupervised Anomalous Sound Detection**
+> **DCASE 2024 Challenge — Task 2: First-Shot Unsupervised Anomalous Sound Detection**
 
-An end-to-end machine learning pipeline that detects anomalous sounds in industrial machines (fans, valves, gearboxes, bearings, etc.) by learning what **normal** sounds look like and flagging anything that deviates. The system is trained entirely on normal machine recordings (unsupervised) and deployed as a production-ready REST API with real-time drift monitoring.
+[![Docker](https://img.shields.io/badge/Docker-Available-2496ED?logo=docker&logoColor=white)](#-quick-start-with-docker)
+[![Python](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white)](#prerequisites)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](#api-endpoints)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C?logo=pytorch&logoColor=white)](#model-architectures)
+[![License](https://img.shields.io/badge/License-Academic-lightgrey)](#license)
+
+An end-to-end machine learning system that detects anomalous sounds in industrial machines — fans, valves, gearboxes, bearings, toy cars, toy trains, and sliders — by learning **normal** acoustic patterns and flagging deviations. The system is trained entirely on unlabeled normal recordings (unsupervised) and ships as a containerized REST API with a web interface, real-time inference, and production drift monitoring.
+
+**Author:** Mario Aouad  
+**Course:** Mechanical Engineering — Machine Learning  
+**Date:** April 2026
 
 ---
 
 ## Table of Contents
 
-1. [How It Works](#how-it-works)
-2. [Project Architecture](#project-architecture)
-3. [Detailed File Reference](#detailed-file-reference)
-4. [Setup & Installation](#setup--installation)
-5. [Pipeline Walkthrough](#pipeline-walkthrough)
-6. [Running the API Server](#running-the-api-server)
-7. [Docker Deployment](#docker-deployment)
-8. [Monitoring & Drift Detection](#monitoring--drift-detection)
-9. [Best Results Per Machine](#best-results-per-machine)
-10. [Key Design Decisions](#key-design-decisions)
+- [Quick Start with Docker](#-quick-start-with-docker)
+- [Web Interface Guide](#-web-interface-guide)
+- [How It Works](#-how-it-works)
+- [Project Structure](#-project-structure)
+- [Setup & Installation (From Source)](#-setup--installation-from-source)
+- [Full Pipeline Walkthrough](#-full-pipeline-walkthrough)
+- [API Endpoints](#-api-endpoints)
+- [Monitoring & Drift Detection](#-monitoring--drift-detection)
+- [Results](#-results)
+- [Key Design Decisions](#-key-design-decisions)
+- [Troubleshooting](#-troubleshooting)
 
 ---
 
-## How It Works
+## 🐳 Quick Start with Docker
 
-### The Core Idea
+The fastest way to run the system. **No Python, no dependencies, no setup** — just Docker.
 
-Industrial machines produce consistent sound patterns when operating normally. A failing bearing creates a distinctive grinding noise. A clogged fan develops a wobble frequency. These acoustic "fingerprints" deviate from the normal baseline.
+### Prerequisites
 
-We exploit this by training a **Convolutional Autoencoder** — a neural network that compresses and reconstructs spectrogram images — exclusively on **normal** sounds. After training:
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
 
-- **Normal sounds**: The model reconstructs them accurately (low reconstruction error)
-- **Anomalous sounds**: The model fails to reconstruct unfamiliar patterns (high reconstruction error)
+### Option A: Pull from Docker Hub (Recommended)
 
-The reconstruction error becomes our **anomaly score**.
+```bash
+docker pull elchamandre/acoustic-anomaly-api:latest
+docker run -p 8000:8000 elchamandre/acoustic-anomaly-api:latest
+```
 
-### The Pipeline (4 Phases)
+### Option B: Build Locally
+
+```bash
+# Clone the repository
+git clone https://github.com/MarioAouad/Mechanical-Engineering-Machine-Learning-Model.git
+cd Mechanical-Engineering-Machine-Learning-Model
+
+# Build the Docker image
+docker build -t acoustic-anomaly-api .
+
+# Run the container
+docker run -p 8000:8000 acoustic-anomaly-api
+```
+
+### What Happens Next
+
+1. The container starts and loads all **7 machine models** into memory (takes ~15–30 seconds)
+2. You will see output confirming each model is loaded:
+   ```
+   Loading ToyCar [V1]...
+     [OK] ToyCar ready (strategy=Recon_Max, threshold=0.001978)
+   Loading ToyTrain [V2]...
+     [OK] ToyTrain ready (strategy=Recon_Max, threshold=0.182543)
+   ...
+   ==================================================
+   All 7 models loaded. Server ready.
+   ==================================================
+   ```
+3. Open your browser and navigate to **http://localhost:8000**
+4. The web interface loads automatically — you are ready to analyze audio files
+
+### Stopping the Container
+
+Press `Ctrl+C` in the terminal, or run:
+
+```bash
+docker ps                          # Find the container ID
+docker stop <container_id>         # Stop it
+```
+
+---
+
+## 🖥 Web Interface Guide
+
+The application includes a built-in web UI accessible at **http://localhost:8000** after starting the server.
+
+### Step-by-Step Usage
+
+#### 1. Select a Machine Type
+
+When the page loads, you will see 7 machine buttons arranged in a grid. Each button shows:
+- The machine name (e.g., **Fan**, **Bearing**, **Valve**)
+- The scoring pipeline and strategy used for that machine (e.g., `V1 · Recon_Mean`)
+
+**Click the button** corresponding to the machine type your audio was recorded from.
+
+#### 2. Upload a `.wav` Audio File
+
+After selecting a machine:
+- **Drag and drop** a `.wav` file onto the upload zone, or
+- **Click** the upload zone to open a file picker
+
+The file name and size will appear below the upload zone.
+
+> **Note:** The system expects `.wav` audio files. Other formats (`.mp3`, `.flac`, etc.) are not supported.
+
+#### 3. View the Prediction Result
+
+Click **"Analyze Audio"**. The system will:
+1. Convert the audio to a Log-Mel spectrogram
+2. Extract overlapping patches
+3. Run them through the trained autoencoder
+4. Compute the anomaly score using the machine's optimal strategy
+5. Compare the score against the calibrated threshold
+
+The result card displays:
+- **NORMAL** (green) or **ANOMALY** (red) — the final decision
+- **Anomaly Score** — the raw numeric score
+- **Threshold** — the calibrated boundary for this machine
+- **Confidence** — how far the score is from the threshold (in σ units)
+- **Strategy** — which scoring method was used
+- **Pipeline** — V1 or V2
+- **Latency** — inference time in milliseconds
+
+#### 4. Health Dashboard
+
+Click the **"Health"** button in the header to expand the real-time health dashboard. It shows:
+- **Status** — Healthy (green) or Degraded (amber)
+- **Uptime** — how long the server has been running
+- **Total Requests** — cumulative prediction count
+- **Anomaly Rate** — percentage of predictions flagged as anomalous
+- **Machines Active** — how many machine types have been queried
+- **Alerts** — any active drift alerts (see [Monitoring](#-monitoring--drift-detection))
+
+The dashboard polls the `/health` endpoint every 5 seconds and updates automatically.
+
+#### 5. Start a New Analysis
+
+Click **"← Start New Analysis"** to reset and analyze a different file or machine type.
+
+---
+
+## 🧠 How It Works
+
+### Core Concept
+
+Industrial machines produce consistent sound patterns when operating normally. A failing bearing creates a distinctive grinding noise; a clogged fan develops a wobble frequency. These acoustic "fingerprints" deviate from the normal baseline.
+
+We exploit this by training a **Convolutional Autoencoder** — a neural network that compresses and reconstructs spectrogram images — exclusively on normal sounds.
+
+| Input Type | Reconstruction Quality | Anomaly Score |
+|------------|----------------------|---------------|
+| **Normal** sound | High (model knows this pattern) | Low |
+| **Anomalous** sound | Low (unfamiliar pattern) | High |
+
+### Pipeline Overview
 
 ```
-Phase 1: PREPROCESS        Phase 2: TRAIN           Phase 3: EVALUATE         Phase 4: DEPLOY
-.wav audio files     -->   Train CNN Autoencoder --> Score test files      --> FastAPI server
-Log-Mel Spectrograms       on normal patches only   Find best strategy        with thresholds
-MinMax/StandardScaler      Early stopping            per machine type          and monitoring
+Phase 1: PREPROCESS        Phase 2: TRAIN             Phase 3: EVALUATE          Phase 4: DEPLOY
+───────────────────        ──────────────             ─────────────────          ───────────────
+.wav audio files     ───►  Train CNN Autoencoder ───► Score test files      ───► FastAPI + Web UI
+Log-Mel Spectrograms       on normal patches only     Find best strategy         with thresholds
+MinMax/StandardScaler      Early stopping             per machine type           and monitoring
 ```
 
 ### What Makes This Challenging
 
-1. **No labeled anomalies for training** — We only have "normal" sounds during training
-2. **Domain shift** — The DCASE dataset has ~990 "source" files and only ~10 "target" files from a different recording environment
-3. **7 different machine types** — Each machine has different acoustic characteristics and needs its own model, scaler, and scoring strategy
-4. **Threshold calibration** — Must be done on development data only, never on test data (to avoid overfitting the evaluation)
+| Challenge | Description |
+|-----------|-------------|
+| **No labeled anomalies** | Training uses only "normal" sounds — the model never sees what an anomaly looks like |
+| **Domain shift** | DCASE provides ~990 "source" recordings and only ~10 "target" recordings from a different environment |
+| **7 machine types** | Each machine has unique acoustic characteristics requiring its own model, scaler, and strategy |
+| **Threshold calibration** | Must be computed on development data only — never on test data — to avoid overfitting the evaluation |
 
 ---
 
-## Project Architecture
+## 📁 Project Structure
 
 ```
 Mechanical-Engineering-Machine-Learning-Model/
 │
-├── README.md                     # This file — complete project documentation
-├── requirements.txt              # Python dependencies with explanations
-├── .gitignore                    # Excludes large binary files from Git
+├── README.md                        # Project documentation (this file)
+├── requirements.txt                 # Python dependencies
+├── Dockerfile                       # Container build instructions
+├── .dockerignore                    # Excludes large files from Docker context
+├── .gitignore                       # Excludes large files from Git
 │
-├── configs/                      # Configuration files
-│   └── thresholds.json           # Per-machine anomaly thresholds (computed on dev data only)
+├── configs/
+│   └── thresholds.json              # Per-machine anomaly thresholds + scoring config
 │
-├── data/                         # All data (gitignored — regenerate locally)
-│   ├── raw/                      # DCASE 2024 .wav files (download separately)
-│   │   ├── ToyCar/
-│   │   │   ├── train/            # ~1000 normal .wav files
-│   │   │   └── test/             # ~200 .wav files (mix of normal + anomaly)
-│   │   ├── ToyTrain/
-│   │   ├── bearing/
-│   │   ├── fan/
-│   │   ├── gearbox/
-│   │   ├── slider/
-│   │   └── valve/
-│   ├── processed_v1/             # Spectrograms scaled with MinMaxScaler + ref=1.0
-│   │   └── <machine>/
-│   │       ├── X_train.npy       # Training spectrograms (shape: [N, 128, T])
-│   │       ├── X_val.npy         # Validation spectrograms (15% hold-out)
-│   │       └── scaler.save       # Fitted MinMaxScaler (joblib serialized)
-│   └── processed_v2/             # Spectrograms scaled with StandardScaler + ref=np.max
-│       └── <machine>/
-│           ├── X_train.npy
-│           ├── X_val.npy
-│           └── scaler.save       # Fitted StandardScaler (joblib serialized)
+├── api/                             # Deployment layer
+│   ├── app.py                       # FastAPI server (/predict, /health, /stats, /machines)
+│   ├── monitor.py                   # Drift monitoring (score, feature, decision drift)
+│   └── static/                      # Web interface
+│       ├── index.html               # Main HTML page
+│       ├── style.css                # Dark glassmorphism theme
+│       └── app.js                   # Client-side logic + health dashboard
 │
-├── src/                          # Source code — all pipeline logic
-│   ├── __init__.py
-│   ├── preprocessing/            # Phase 1: Audio → Spectrogram conversion
-│   │   ├── __init__.py
-│   │   ├── preprocess_v1.py      # Pipeline V1: MinMaxScaler, ref=1.0 (absolute dB)
-│   │   └── preprocess_v2.py      # Pipeline V2: StandardScaler, ref=np.max (relative dB)
-│   ├── training/                 # Phase 2: Autoencoder training
-│   │   ├── __init__.py
-│   │   ├── train_v1.py           # Train 5-layer CNN with Sigmoid output
-│   │   ├── train_v2.py           # Train 3-layer CNN with Linear output
-│   │   ├── optimize_v1.py        # Hyperparameter search for V1 architecture
-│   │   └── retrain_valve.py      # Valve-specific retraining (uses V2 with bottleneck=128)
-│   └── evaluation/               # Phase 3: Scoring & threshold calibration
-│       ├── __init__.py
-│       ├── evaluate.py           # Unified evaluation — tests all strategies per machine
-│       ├── optimize_scoring.py   # V2-only scoring optimization (7 strategies)
-│       └── calibrate_thresholds.py  # Compute thresholds on dev data only (NEVER test data)
+├── src/                             # ML pipeline source code
+│   ├── preprocessing/
+│   │   ├── preprocess_v1.py         # Pipeline V1: MinMaxScaler, ref=1.0 (absolute dB)
+│   │   └── preprocess_v2.py         # Pipeline V2: StandardScaler, ref=np.max (relative dB)
+│   ├── training/
+│   │   ├── train_v1.py              # Train 5-layer CNN (Sigmoid output)
+│   │   ├── train_v2.py              # Train 3-layer CNN (Linear output)
+│   │   ├── optimize_v1.py           # Hyperparameter search for V1
+│   │   └── retrain_valve.py         # Valve-specific retraining
+│   └── evaluation/
+│       ├── evaluate.py              # Unified evaluation (7 strategies per machine)
+│       ├── optimize_scoring.py      # V2-only scoring optimization
+│       └── calibrate_thresholds.py  # Threshold computation on dev data only
 │
-├── api/                          # Phase 4: Production deployment
-│   ├── __init__.py
-│   ├── app.py                    # FastAPI server with /predict, /health, /stats endpoints
-│   └── monitor.py                # Drift monitoring — tracks score distributions & anomaly rates
-│
-├── weights/                      # Trained model checkpoints (gitignored)
+├── weights/                         # Trained model checkpoints (per machine)
 │   └── <machine>/
-│       ├── best_model.pth        # Best PyTorch model state dict (selected by val loss)
-│       ├── metadata.pth          # Training metadata (n_frames, best_val, bottleneck_dim)
-│       ├── knn.save              # (V1 only) Fitted KNN model for embedding scoring
-│       └── gmm.save              # (V1 only) Fitted GMM model (optional scoring)
+│       ├── best_model.pth           # Best model (selected by validation loss)
+│       ├── metadata.pth             # Training metadata (n_frames, bottleneck_dim)
+│       ├── scaler.save              # Fitted scaler (for Docker — no raw data needed)
+│       └── knn.save                 # KNN model (bearing only)
 │
-├── logs/                         # Runtime logs
-│   └── predictions/              # JSONL prediction logs from API (one file per day)
-│       └── predictions_YYYY-MM-DD.jsonl
+├── data/                            # Audio data (not included in Docker/Git)
+│   ├── raw/                         # DCASE 2024 .wav files
+│   ├── processed_v1/               # V1 spectrograms + scalers
+│   └── processed_v2/               # V2 spectrograms + scalers
 │
-└── outputs/                      # Generated visualizations from experiments
-    ├── training_curves_*.png     # Loss curves from training
-    ├── roc_curves_*.png          # ROC curves from evaluation
-    └── score_distributions_*.png # Normal vs anomaly score histograms
+├── logs/predictions/                # JSONL prediction logs (one file per day)
+└── outputs/                         # Training curves, ROC plots, score distributions
 ```
 
 ---
 
-## Detailed File Reference
+## 🛠 Setup & Installation (From Source)
 
-### `src/preprocessing/preprocess_v1.py`
-**What it does:** Converts raw `.wav` audio into scaled Log-Mel Spectrograms using Pipeline V1.
-
-**Key choices:**
-- `ref=1.0` — Preserves **absolute** dB levels across files. A louder machine stays louder in the spectrogram. This is important for machines like ToyCar and fan where volume differences carry diagnostic information.
-- `MinMaxScaler(0, 1)` — Scales all spectrogram pixels to [0, 1]. This matches the Sigmoid activation in the V1 autoencoder output layer. Without this, the model literally cannot reconstruct negative dB values.
-- **Domain shift handling** — Oversamples the ~10 "target" domain files to match the ~990 "source" files, so the autoencoder learns both recording environments equally.
-
-**Run:** `conda run -n ML python src/preprocessing/preprocess_v1.py`
-
----
-
-### `src/preprocessing/preprocess_v2.py`
-**What it does:** Converts raw `.wav` audio into scaled Log-Mel Spectrograms using Pipeline V2.
-
-**Key choices:**
-- `ref=np.max` — Normalizes each file's max power to 0 dB. This removes volume differences and captures the **spectral shape** (relative energy distribution across frequencies). Better for machines like gearbox and slider where the fault signature is a change in frequency pattern, not volume.
-- `StandardScaler` — Z-score normalization per Mel band. Instead of hard-clipping to [0, 1], this centers each frequency band to mean=0, std=1. This works with the V2 autoencoder's linear output layer (no activation = no output range constraint).
-- **Circular time shifts** — Instead of simply duplicating target files, each oversampled copy is randomly time-shifted. This creates genuinely different training examples while preserving spectral content.
-
-**Run:** `conda run -n ML python src/preprocessing/preprocess_v2.py`
-
----
-
-### `src/training/train_v1.py`
-**What it does:** Trains the V1 CNN Autoencoder architecture.
-
-**Architecture (5-layer encoder):**
-```
-Input (1, 128, 64) → Conv(16) → Conv(32) → Conv(64) → Conv(128) → Conv(128)
-→ Flatten → FC(64) → FC(1024) → Unflatten
-→ DeConv(128) → DeConv(64) → DeConv(32) → DeConv(16) → DeConv(1) + Sigmoid
-```
-- **Bottleneck**: 64 dimensions (forces extreme compression)
-- **Dropout2d**: 0.2 (prevents overfitting to specific frequency patterns)
-- **LeakyReLU**: 0.2 negative slope (avoids dead neurons in the encoder)
-- **Sigmoid output**: Output range [0, 1], matching MinMaxScaler input range
-
----
-
-### `src/training/train_v2.py`
-**What it does:** Trains the V2 CNN Autoencoder architecture.
-
-**Architecture (3-layer encoder):**
-```
-Input (1, 128, 64) → Conv(32) → Conv(64) → Conv(128)
-→ Flatten → FC(128) → FC(128*16*8) → Unflatten
-→ DeConv(64) → DeConv(32) → DeConv(1) [Linear output]
-```
-- **Bottleneck**: 128 dimensions (wider for z-scored data which has more variance)
-- **Linear output**: No Sigmoid — can reconstruct z-scored values (including negatives)
-- **ReLU**: Standard activation (works better with StandardScaler data)
-
----
-
-### `src/evaluation/evaluate.py`
-**What it does:** The unified evaluation script. Loads the best model per machine (V1 or V2), tests **7 scoring strategies**, and picks the best one.
-
-**Scoring strategies tested:**
-| Strategy | Formula | When It Works Best |
-|----------|---------|-------------------|
-| `Recon_Mean` | Mean of patch MSEs | Most machines (general-purpose) |
-| `Recon_Max` | Max of patch MSEs | Machines with localized faults (ToyCar, ToyTrain) |
-| `Recon_P90` | 90th percentile MSE | Robust to outlier patches |
-| `KNN_Mean` | Mean KNN distance in embedding space | When reconstruction error alone is insufficient (bearing) |
-| `KNN_Max` | Max KNN distance | Extreme deviation detection |
-| `Neg_Recon` | -1 × Mean MSE | When anomalies are "simpler" and reconstructed BETTER (valve) |
-| `Hybrid_Mean` | Z-scored Recon + KNN | Combined evidence |
-
-**Why Neg_Recon for valve:** Valve anomalies produce simpler, more repetitive sounds that the autoencoder actually reconstructs *better* than complex normal sounds. Negating the error flips the direction so that better reconstruction = higher anomaly score.
-
----
-
-### `src/evaluation/calibrate_thresholds.py`
-**What it does:** Computes the decision threshold for each machine using **ONLY development data** (training set).
-
-**Why this matters:** A classic mistake in anomaly detection is tuning thresholds on the test set. This artificially inflates results because you're fitting your decision boundary to data you're supposed to be evaluating against. By using only training data (all normal sounds), we get an honest estimate of the threshold.
-
-**Method:** Threshold = 95th percentile of normal training scores. This means ~5% of known-normal sounds would be flagged as anomalous (false positive rate), which is a conservative, deployment-safe calibration.
-
-**Run:** `conda run -n ML python src/evaluation/calibrate_thresholds.py`
-
-**Output:** `configs/thresholds.json`
-
----
-
-### `api/app.py`
-**What it does:** A FastAPI web server that wraps the entire pipeline into a REST API.
-
-**Endpoints:**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/predict` | POST | Upload a `.wav` file + machine type → anomaly prediction |
-| `/machines` | GET | List all supported machine types and their scoring configs |
-| `/thresholds` | GET | Return the full threshold JSON |
-| `/health` | GET | System health summary with drift alerts |
-| `/stats` | GET | Detailed per-machine monitoring statistics |
-
-**Startup behavior:** Loads all 7 models, scalers, and thresholds into GPU memory. For machines using KNN scoring (bearing), it either loads a cached KNN model or fits one from training data.
-
----
-
-### `api/monitor.py`
-**What it does:** Tracks production inference statistics in real-time to detect **data drift** and **model degradation**.
-
-**What it monitors:**
-- **Score distribution** — Are anomaly scores shifting? (mean, std, min, max over a rolling window)
-- **Anomaly rate** — Is the system suddenly flagging >30% of clips? (alert threshold)
-- **Feature drift** — Are spectrogram pixel values changing? (3-sigma deviation alert)
-- **Latency** — Is inference slowing down?
-
-**Alerts generated:**
-- `HIGH_ANOMALY_RATE` — More than 30% of recent clips flagged
-- `COLLAPSED_SCORES` — All scores identical (model may be dead/stuck)
-- `FEATURE_DRIFT` — Current spectrogram statistics deviate >3 standard deviations from baseline
-
-**Logging:** Every prediction is appended to `logs/predictions/predictions_YYYY-MM-DD.jsonl` for offline analysis.
-
----
-
-### `configs/thresholds.json`
-**What it contains:** Per-machine configuration including:
-- `pipeline` — Which model version (V1 or V2)
-- `strategy` — Which scoring method (Recon_Max, KNN_Mean, etc.)
-- `threshold` — The calibrated decision boundary
-- `score_stats` — Distribution statistics of normal training scores (mean, std, percentiles)
-
-This file is the bridge between training and deployment. The API server reads it at startup to know how to score and threshold each machine type.
-
----
-
-## Setup & Installation
+> **Note:** This section is only needed if you want to retrain models or modify the pipeline. To just run the API, use the [Docker instructions](#-quick-start-with-docker).
 
 ### Prerequisites
+
 - Python 3.10+
-- NVIDIA GPU with CUDA (for training; CPU works for inference)
+- NVIDIA GPU with CUDA (recommended for training; CPU works for inference)
 - Conda (recommended) or pip
 
 ### Installation
@@ -279,180 +258,166 @@ cd Mechanical-Engineering-Machine-Learning-Model
 conda create -n ML python=3.10
 conda activate ML
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Install PyTorch with CUDA (adjust for your CUDA version)
+# Install PyTorch with CUDA (adjust cu121 for your CUDA version)
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# Install remaining dependencies
+pip install -r requirements.txt
 ```
 
 ### Download the DCASE 2024 Dataset
-Download the development dataset from the [DCASE 2024 Task 2 website](https://dcase.community/challenge2024/task-first-shot-unsupervised-anomalous-sound-detection-for-machine-condition-monitoring) and extract it into `data/raw/`:
+
+Download the development dataset from the [DCASE 2024 Task 2 website](https://dcase.community/challenge2024/task-first-shot-unsupervised-anomalous-sound-detection-for-machine-condition-monitoring) and extract into `data/raw/`:
+
 ```
 data/raw/
 ├── ToyCar/
-│   ├── train/    (normal .wav files)
-│   └── test/     (normal + anomaly .wav files)
+│   ├── train/     (normal .wav files)
+│   └── test/      (normal + anomaly .wav files)
+├── ToyTrain/
+├── bearing/
 ├── fan/
-│   ├── train/
-│   └── test/
-└── ... (7 machine types total)
+├── gearbox/
+├── slider/
+└── valve/
 ```
 
 ---
 
-## Pipeline Walkthrough
+## 🔄 Full Pipeline Walkthrough
 
-### Step 1: Preprocess Audio
+### Step 1: Preprocess Audio → Spectrograms
+
 ```bash
-# Generate V1 spectrograms (MinMaxScaler, ref=1.0)
-conda run -n ML python src/preprocessing/preprocess_v1.py
+# Pipeline V1: MinMaxScaler, absolute dB (ref=1.0)
+python src/preprocessing/preprocess_v1.py
 
-# Generate V2 spectrograms (StandardScaler, ref=np.max)
-conda run -n ML python src/preprocessing/preprocess_v2.py
+# Pipeline V2: StandardScaler, relative dB (ref=np.max)
+python src/preprocessing/preprocess_v2.py
 ```
-This creates `data/processed_v1/` and `data/processed_v2/` with `.npy` spectrograms and fitted scalers.
 
-### Step 2: Train Models
+Creates `data/processed_v1/` and `data/processed_v2/` with `.npy` spectrogram arrays and fitted scalers.
+
+### Step 2: Train Autoencoders
+
 ```bash
-# Train V1 models (5-layer CNN, used for ToyCar, fan, valve)
-conda run -n ML python src/training/train_v1.py
+# V1 models (5-layer CNN — used for ToyCar, fan, valve)
+python src/training/train_v1.py
 
-# Train V2 models (3-layer CNN, used for ToyTrain, bearing, gearbox, slider)
-conda run -n ML python src/training/train_v2.py
+# V2 models (3-layer CNN — used for ToyTrain, bearing, gearbox, slider)
+python src/training/train_v2.py
 ```
-Models are saved to `weights/<machine>/best_model.pth`.
+
+Models are saved to `weights/<machine>/best_model.pth` with early stopping on validation loss.
 
 ### Step 3: Evaluate & Find Best Strategy
+
 ```bash
-conda run -n ML python src/evaluation/evaluate.py
+python src/evaluation/evaluate.py
 ```
-Tests all 7 scoring strategies per machine and prints the best one.
+
+Tests 7 scoring strategies per machine and reports AUC/pAUC for each. The best strategy per machine is selected for deployment.
 
 ### Step 4: Calibrate Thresholds
+
 ```bash
-conda run -n ML python src/evaluation/calibrate_thresholds.py
+python src/evaluation/calibrate_thresholds.py
 ```
-Computes thresholds on development data only. Saves to `configs/thresholds.json`.
+
+Computes anomaly thresholds using **only** the development (training) data. Saves the full configuration to `configs/thresholds.json`.
 
 ### Step 5: Deploy
+
 ```bash
-conda run -n ML uvicorn api.app:app --host 0.0.0.0 --port 8000
-```
-Server is live at `http://localhost:8000`. Interactive docs at `http://localhost:8000/docs`.
-
----
-
-## Running the API Server
-
-### Start the Server
-```bash
-conda activate ML
 uvicorn api.app:app --host 0.0.0.0 --port 8000
 ```
 
-### Make a Prediction
+Server is live at http://localhost:8000. Swagger API docs available at http://localhost:8000/docs.
+
+---
+
+## 📡 API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Redirects to the web interface |
+| `/predict` | POST | Upload a `.wav` file + machine type → anomaly prediction |
+| `/machines` | GET | List all supported machine types and their configurations |
+| `/thresholds` | GET | Return the full threshold configuration JSON |
+| `/health` | GET | System health summary with uptime, request counts, and drift alerts |
+| `/stats` | GET | Detailed per-machine monitoring statistics |
+
+### Example: Predict via cURL
+
 ```bash
 curl -X POST "http://localhost:8000/predict?machine_type=fan" \
-  -F "audio=@data/raw/fan/test/section_00_source_test_anomaly_0001.wav"
+  -F "audio=@path/to/your/audio.wav"
 ```
 
-### Response Example
+### Example Response
+
 ```json
 {
   "machine_type": "fan",
   "anomaly_score": 0.00512345,
-  "threshold": 0.004055,
+  "threshold": 0.00345999,
   "is_anomaly": true,
   "decision": "ANOMALY",
-  "confidence": 1.25,
+  "confidence": 1.41,
   "strategy": "Recon_Mean",
   "pipeline": "V1",
   "latency_ms": 245.3
 }
 ```
 
-### Check System Health
+### Example: Health Check
+
 ```bash
 curl http://localhost:8000/health
 ```
 
----
-
-## Docker Deployment
-
-You can run the entire API server using Docker. This ensures a consistent environment regardless of your host operating system.
-
-### Option 1: Using a Pre-built Image from Docker Hub (Recommended)
-If the image is published to Docker Hub, you can pull and run it directly. *Note: You must still mount your local weights and data directories so the container can access the models and scalers.*
-
-```bash
-# Pull the image
-docker pull yourusername/acoustic-anomaly-api:latest
-
-# Run the container (mounting required directories)
-docker run -d -p 8000:8000 \
-  -v $(pwd)/weights:/app/weights \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/configs:/app/configs \
-  -v $(pwd)/logs:/app/logs \
-  yourusername/acoustic-anomaly-api:latest
-```
-
-### Option 2: Building the Image Locally
-You can build the Docker image yourself using the provided `Dockerfile`.
-
-```bash
-# Build the image locally
-docker build -t acoustic-anomaly-api:local .
-
-# Run the local image
-docker run -d -p 8000:8000 \
-  -v $(pwd)/weights:/app/weights \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/configs:/app/configs \
-  -v $(pwd)/logs:/app/logs \
-  acoustic-anomaly-api:local
-```
-
-### Publishing to Docker Hub
-To publish your own image to Docker Hub:
-```bash
-# 1. Login to Docker Hub
-docker login
-
-# 2. Tag your local image with your Docker Hub username
-docker tag acoustic-anomaly-api:local yourusername/acoustic-anomaly-api:v1.0
-
-# 3. Push the image
-docker push yourusername/acoustic-anomaly-api:v1.0
+```json
+{
+  "status": "healthy",
+  "uptime_seconds": 3621.4,
+  "total_requests": 42,
+  "total_anomalies": 5,
+  "anomaly_rate": 0.119,
+  "machines_served": ["fan", "valve", "bearing"],
+  "active_alerts": []
+}
 ```
 
 ---
 
-## Monitoring & Drift Detection
+## 📊 Monitoring & Drift Detection
 
-The monitoring system (`api/monitor.py`) tracks three categories of drift:
+The built-in monitoring system (`api/monitor.py`) continuously tracks three categories of production drift:
 
-### 1. Score Drift
-If the anomaly score distribution shifts (e.g., mean score increases over time), it may indicate that the machine's operating conditions have changed and the model is becoming stale.
+| Drift Type | What It Detects | Alert Trigger |
+|------------|----------------|---------------|
+| **Score drift** | Anomaly score distribution shifting over time | — |
+| **Feature drift** | Spectrogram pixel values deviating from baseline | Mean deviates > 3σ from rolling window |
+| **Decision drift** | Anomaly rate spiking | > 30% of recent clips flagged |
 
-### 2. Feature Drift
-If the average spectrogram pixel values change significantly (>3 standard deviations from the rolling window), it suggests the input audio characteristics are different from what the model was trained on.
+### Alert Types
 
-### 3. Decision Drift
-If the anomaly rate suddenly spikes above 30%, either:
-- Something is genuinely wrong with the machines (real anomalies)
-- The input data has shifted enough to invalidate the model (requires retraining)
+| Alert | Meaning |
+|-------|---------|
+| `HIGH_ANOMALY_RATE` | More than 30% of recent clips flagged as anomalous |
+| `COLLAPSED_SCORES` | All scores are identical — model may be stuck |
+| `FEATURE_DRIFT` | Input audio characteristics have changed significantly |
 
-All predictions are logged to `logs/predictions/` for offline post-hoc analysis.
+All predictions are logged to `logs/predictions/predictions_YYYY-MM-DD.jsonl` for offline analysis.
 
 ---
 
-## Best Results Per Machine
+## 📈 Results
 
-| Machine | Pipeline | Scoring Strategy | AUC | pAUC |
-|---------|----------|-----------------|-----|------|
+### Best Performance Per Machine
+
+| Machine | Pipeline | Strategy | AUC | pAUC |
+|---------|----------|----------|-----|------|
 | ToyCar | V1 | Recon_Max | 0.5545 | 0.5005 |
 | ToyTrain | V2 | Recon_Max | 0.6232 | 0.5084 |
 | bearing | V2 | KNN_Mean | 0.5869 | 0.5347 |
@@ -462,20 +427,67 @@ All predictions are logged to `logs/predictions/` for offline post-hoc analysis.
 | valve | V1 | Neg_Recon | 0.5961 | 0.5405 |
 | **Average** | — | — | **0.5996** | **0.5252** |
 
+### Model Architectures
+
+| | V1 (5-Layer CNN) | V2 (3-Layer CNN) |
+|---|---|---|
+| **Used for** | ToyCar, fan, valve | ToyTrain, bearing, gearbox, slider |
+| **Encoder** | 5 conv layers → FC(64) | 3 conv layers → FC(128) |
+| **Output** | Sigmoid (range [0, 1]) | Linear (unbounded) |
+| **Scaler** | MinMaxScaler (per Mel band) | StandardScaler (per Mel band) |
+| **dB reference** | `ref=1.0` (absolute) | `ref=np.max` (relative) |
+| **Activation** | LeakyReLU + Dropout2d | ReLU |
+
+### Scoring Strategies
+
+| Strategy | Formula | Best For |
+|----------|---------|----------|
+| `Recon_Mean` | Mean of patch MSEs | Most machines (general-purpose) |
+| `Recon_Max` | Max of patch MSEs | Localized faults (ToyCar, ToyTrain) |
+| `KNN_Mean` | Mean KNN distance in embedding space | When reconstruction error alone is insufficient (bearing) |
+| `Neg_Recon` | −1 × Mean MSE | When anomalies are reconstructed *better* than normal (valve) |
+
 ---
 
-## Key Design Decisions
+## 🔑 Key Design Decisions
 
-### Why Two Pipelines (V1 vs V2)?
-Different machines respond differently to preprocessing and architecture choices:
-- **V1** (MinMaxScaler + Sigmoid + 5-layer CNN) works better for machines where absolute volume matters (ToyCar, fan, valve)
-- **V2** (StandardScaler + Linear + 3-layer CNN) works better for machines where spectral shape matters more than volume (ToyTrain, bearing, gearbox, slider)
+### Why Two Pipelines?
+
+Different machines respond differently to preprocessing:
+- **V1** (absolute dB + MinMaxScaler + Sigmoid) — works better when volume carries diagnostic information (ToyCar, fan, valve)
+- **V2** (relative dB + StandardScaler + Linear) — works better when spectral shape matters more than volume (ToyTrain, bearing, gearbox, slider)
 
 ### Why Per-Mel-Band Scaling?
-Both V1 and V2 scale per Mel band (128 features), not per pixel (128 x 313 = 40,064 features). This preserves time-shift invariance — a spike at time t=10 is treated the same as a spike at t=50. Per-pixel scaling would destroy this invariance and cause the model to memorize pixel positions instead of acoustic patterns.
 
-### Why Domain Oversampling?
-The DCASE dataset has a severe class imbalance: ~990 source-domain recordings vs ~10 target-domain recordings. Without oversampling, the autoencoder would only learn to reconstruct source-domain sounds and fail on target-domain test files (causing low pAUC scores).
+Both pipelines scale per Mel band (128 features), not per pixel (128 × T). This preserves **time-shift invariance** — a spike at t=10 is treated identically to a spike at t=50. Per-pixel scaling would cause the model to memorize positions instead of acoustic patterns.
 
-### Why Reconstruction Error Instead of Classification?
-Since we have no anomaly labels during training, we can't train a classifier. Instead, we train the autoencoder to be an expert at reconstructing normal sounds. Any sound it can't reconstruct well is, by definition, abnormal. This is the fundamental principle of unsupervised anomaly detection.
+### Why Neg_Recon for Valve?
+
+Valve anomalies produce simpler, more repetitive sounds that the autoencoder actually reconstructs *better* than complex normal sounds. Negating the error flips the direction so that better reconstruction = higher anomaly score.
+
+### Why Threshold on Dev Data Only?
+
+A classic mistake in anomaly detection is tuning thresholds on the test set, which inflates results. Our thresholds are computed at the 85th percentile of normal training scores — ensuring an honest, deployment-safe calibration.
+
+### Why Docker?
+
+The container packages all models, weights, configs, and the web UI into a single portable image. An evaluator can run the system with one command (`docker run`) without installing Python, PyTorch, or any dependencies.
+
+---
+
+## ❓ Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| **Port 8000 already in use** | Stop the existing process or use a different port: `docker run -p 9000:8000 ...` then visit http://localhost:9000 |
+| **Container exits immediately** | Check logs: `docker logs <container_id>`. Usually a missing file or dependency issue. |
+| **"Unknown machine type" error** | Use one of: `ToyCar`, `ToyTrain`, `bearing`, `fan`, `gearbox`, `slider`, `valve` (case-sensitive) |
+| **Slow first prediction** | Normal — the first inference loads model layers into memory. Subsequent predictions are faster. |
+| **scikit-learn version warning** | Can be safely ignored. The serialized scalers may show a version mismatch warning but function correctly. |
+| **Web UI not loading** | Ensure you are visiting `http://localhost:8000` (not `https://`). Check that port 8000 is mapped correctly. |
+
+---
+
+## License
+
+This project was developed as an academic deliverable for the Mechanical Engineering Machine Learning course. The DCASE 2024 dataset is provided under its own license — see the [DCASE website](https://dcase.community/challenge2024/) for details.

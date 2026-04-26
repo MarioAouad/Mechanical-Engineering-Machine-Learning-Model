@@ -285,9 +285,169 @@ body {
 }
 .btn-secondary:hover { border-color: rgba(99, 102, 241, 0.4); color: var(--text-primary); }
 
+/* --- Header Actions --- */
+.header-actions {
+    display: flex; align-items: center; gap: 12px;
+}
+.btn-health-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: 999px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-glass);
+    color: var(--text-secondary);
+    font-family: inherit; font-size: 0.78rem; font-weight: 500;
+    cursor: pointer; transition: var(--transition);
+}
+.btn-health-toggle svg { width: 16px; height: 16px; }
+.btn-health-toggle:hover {
+    border-color: rgba(99, 102, 241, 0.4);
+    color: var(--text-primary);
+    background: rgba(99, 102, 241, 0.08);
+}
+.btn-health-toggle.active {
+    border-color: var(--accent-indigo);
+    color: var(--accent-indigo);
+    background: rgba(99, 102, 241, 0.1);
+}
+
+/* -- Status dot states -- */
+.header-status.online { color: var(--accent-emerald); border-color: rgba(16, 185, 129, 0.2); background: rgba(16, 185, 129, 0.08); }
+.header-status.online .status-dot { background: var(--accent-emerald); }
+.header-status.degraded { color: var(--accent-amber); border-color: rgba(245, 158, 11, 0.2); background: rgba(245, 158, 11, 0.08); }
+.header-status.degraded .status-dot { background: var(--accent-amber); }
+.header-status.offline { color: var(--accent-rose); border-color: rgba(244, 63, 94, 0.2); background: rgba(244, 63, 94, 0.08); }
+.header-status.offline .status-dot { background: var(--accent-rose); animation: none; }
+
+/* --- Health Dashboard --- */
+.health-dashboard {
+    margin-bottom: 28px;
+    padding: 24px;
+    background: var(--bg-glass);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-glow);
+    animation: slideDown 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+}
+.health-dashboard.hidden { display: none; }
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-12px); max-height: 0; }
+    to { opacity: 1; transform: translateY(0); max-height: 600px; }
+}
+
+.health-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-glass);
+}
+.health-title {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 0.95rem; font-weight: 600; color: var(--text-primary);
+}
+.health-icon { width: 20px; height: 20px; stroke: var(--accent-indigo); }
+
+.health-live-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 999px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    color: #ef4444;
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 1px;
+}
+.live-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #ef4444;
+    animation: livePulse 1.5s infinite;
+}
+@keyframes livePulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+    50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+}
+
+/* --- Health Metrics Grid --- */
+.health-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+.health-metric {
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    transition: var(--transition);
+}
+.health-metric:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(99, 102, 241, 0.2);
+}
+.metric-icon {
+    font-size: 1.3rem;
+    width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+.status-icon { background: rgba(16, 185, 129, 0.12); color: var(--accent-emerald); }
+.uptime-icon { background: rgba(99, 102, 241, 0.12); color: var(--accent-indigo); }
+.requests-icon { background: rgba(6, 182, 212, 0.12); color: var(--accent-cyan); }
+.anomaly-icon { background: rgba(139, 92, 246, 0.12); color: var(--accent-purple); }
+.machines-icon { background: rgba(245, 158, 11, 0.12); color: var(--accent-amber); }
+.alerts-icon { background: rgba(244, 63, 94, 0.12); color: var(--accent-rose); }
+
+.metric-label {
+    font-size: 0.68rem; font-weight: 500;
+    color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
+}
+.metric-value {
+    font-size: 1.1rem; font-weight: 700;
+    color: var(--text-primary); margin-top: 2px;
+}
+.metric-value.status-healthy { color: var(--accent-emerald); }
+.metric-value.status-degraded { color: var(--accent-amber); }
+.metric-value.status-offline { color: var(--accent-rose); }
+
+/* --- Alerts Panel --- */
+.health-alerts-panel {
+    margin-top: 16px;
+    padding: 16px;
+    background: rgba(244, 63, 94, 0.06);
+    border: 1px solid rgba(244, 63, 94, 0.15);
+    border-radius: var(--radius-md);
+    animation: fadeSlideUp 0.3s ease;
+}
+.health-alerts-panel.hidden { display: none; }
+.alerts-title {
+    font-size: 0.82rem; font-weight: 600;
+    color: var(--accent-rose); margin-bottom: 10px;
+}
+.alerts-list {
+    list-style: none; padding: 0; margin: 0;
+}
+.alerts-list li {
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    background: rgba(244, 63, 94, 0.06);
+    border-left: 3px solid var(--accent-rose);
+    border-radius: 0 8px 8px 0;
+    font-size: 0.78rem; color: var(--text-secondary);
+    font-family: 'Inter', monospace;
+}
+.alerts-list li:last-child { margin-bottom: 0; }
+
 /* --- Responsive --- */
 @media (max-width: 600px) {
     .app-header { flex-direction: column; gap: 14px; text-align: center; }
+    .header-actions { justify-content: center; }
     .machines-grid { grid-template-columns: 1fr; }
     .result-details { grid-template-columns: 1fr 1fr; }
+    .health-metrics { grid-template-columns: 1fr 1fr; }
 }
+@media (max-width: 400px) {
+    .health-metrics { grid-template-columns: 1fr; }
+}
+

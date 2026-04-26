@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchMachines();
     buildMachineButtons();
     bindEvents();
+    initHealthDashboard();
 });
 
 // --- Background Particles ---
@@ -239,3 +240,139 @@ function resetAll() {
 // --- Helpers ---
 function show(id) { document.getElementById(id).classList.remove('hidden'); }
 function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+// ===================================================================
+// Health Dashboard
+// ===================================================================
+let healthInterval = null;
+
+function initHealthDashboard() {
+    const toggleBtn = document.getElementById('btnHealthToggle');
+    const dashboard = document.getElementById('healthDashboard');
+
+    toggleBtn.addEventListener('click', () => {
+        const isHidden = dashboard.classList.contains('hidden');
+        if (isHidden) {
+            dashboard.classList.remove('hidden');
+            toggleBtn.classList.add('active');
+        } else {
+            dashboard.classList.add('hidden');
+            toggleBtn.classList.remove('active');
+        }
+    });
+
+    // Poll immediately, then every 5 seconds
+    pollHealth();
+    healthInterval = setInterval(pollHealth, 5000);
+}
+
+async function pollHealth() {
+    const headerStatus = document.getElementById('headerStatus');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+
+    try {
+        const res = await fetch('/health');
+        if (!res.ok) throw new Error('Unhealthy');
+        const data = await res.json();
+
+        // Update header status badge
+        headerStatus.className = 'header-status';
+        if (data.status === 'healthy') {
+            headerStatus.classList.add('online');
+            statusText.textContent = 'System Online';
+        } else {
+            headerStatus.classList.add('degraded');
+            statusText.textContent = 'Degraded';
+        }
+
+        // Update dashboard metrics
+        updateHealthMetrics(data);
+
+    } catch (e) {
+        // Server unreachable
+        headerStatus.className = 'header-status offline';
+        statusText.textContent = 'Offline';
+        setMetricOffline();
+    }
+}
+
+function updateHealthMetrics(data) {
+    // Status
+    const statusEl = document.getElementById('metricStatus');
+    const statusIcon = document.getElementById('metricStatusIcon');
+    statusEl.textContent = data.status === 'healthy' ? 'Healthy' : 'Degraded';
+    statusEl.className = 'metric-value ' + (data.status === 'healthy' ? 'status-healthy' : 'status-degraded');
+    statusIcon.className = 'metric-icon ' + (data.status === 'healthy' ? 'status-icon' : 'status-icon');
+
+    // Uptime
+    document.getElementById('metricUptime').textContent = formatUptime(data.uptime_seconds);
+
+    // Total requests
+    document.getElementById('metricRequests').textContent = data.total_requests.toLocaleString();
+
+    // Anomaly rate
+    const rate = (data.anomaly_rate * 100).toFixed(1);
+    const rateEl = document.getElementById('metricAnomalyRate');
+    rateEl.textContent = rate + '%';
+    if (data.anomaly_rate > 0.3) {
+        rateEl.className = 'metric-value status-degraded';
+    } else {
+        rateEl.className = 'metric-value';
+    }
+
+    // Machines active
+    const machinesEl = document.getElementById('metricMachines');
+    if (data.machines_served && data.machines_served.length > 0) {
+        machinesEl.textContent = data.machines_served.length + ' active';
+    } else {
+        machinesEl.textContent = data.total_requests > 0 ? '—' : '0 (idle)';
+    }
+
+    // Alerts
+    const alertsEl = document.getElementById('metricAlerts');
+    const alertsPanel = document.getElementById('healthAlertsPanel');
+    const alertsList = document.getElementById('alertsList');
+
+    if (data.active_alerts && data.active_alerts.length > 0) {
+        alertsEl.textContent = data.active_alerts.length + ' active';
+        alertsEl.className = 'metric-value status-degraded';
+        alertsPanel.classList.remove('hidden');
+        alertsList.innerHTML = data.active_alerts
+            .map(a => `<li>${escapeHtml(a)}</li>`)
+            .join('');
+    } else {
+        alertsEl.textContent = 'None';
+        alertsEl.className = 'metric-value status-healthy';
+        alertsPanel.classList.add('hidden');
+    }
+}
+
+function setMetricOffline() {
+    document.getElementById('metricStatus').textContent = 'Offline';
+    document.getElementById('metricStatus').className = 'metric-value status-offline';
+    document.getElementById('metricUptime').textContent = '—';
+    document.getElementById('metricRequests').textContent = '—';
+    document.getElementById('metricAnomalyRate').textContent = '—';
+    document.getElementById('metricMachines').textContent = '—';
+    document.getElementById('metricAlerts').textContent = '—';
+    document.getElementById('healthAlertsPanel').classList.add('hidden');
+}
+
+function formatUptime(seconds) {
+    if (seconds == null) return '—';
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
